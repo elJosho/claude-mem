@@ -18,6 +18,7 @@ import { ensureWorkerRunning, workerHttpRequest } from '../../shared/worker-util
 import { logger } from '../../utils/logger.js';
 import { extractLastMessage } from '../../shared/transcript-parser.js';
 import { HOOK_EXIT_CODES, HOOK_TIMEOUTS, getTimeout } from '../../shared/hook-constants.js';
+import { normalizePlatformSource } from '../../shared/platform-source.js';
 
 const SUMMARIZE_TIMEOUT_MS = getTimeout(HOOK_TIMEOUTS.DEFAULT);
 const POLL_INTERVAL_MS = 500;
@@ -32,33 +33,43 @@ export const summarizeHandler: EventHandler = {
       return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
     }
 
-    const { sessionId, transcriptPath } = input;
+    const { sessionId, transcriptPath, platform } = input;
 
-    // Validate required fields before processing
-    if (!transcriptPath) {
-      // No transcript available - skip summary gracefully (not an error)
-      logger.debug('HOOK', `No transcriptPath in Stop hook input for session ${sessionId} - skipping summary`);
+    if (!sessionId) {
+      logger.debug('HOOK', 'Stop hook: no sessionId, skipping summary');
       return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
     }
 
-    // Extract last assistant message from transcript (the work Claude did)
-    // Note: "user" messages in transcripts are mostly tool_results, not actual user input.
-    // The user's original request is already stored in user_prompts table.
+    const platformSource = normalizePlatformSource(platform);
+
+    // Extract last assistant message from transcript when available (Claude Code).
+    // Cursor hooks do not provide transcript paths; the worker summarizes from
+    // stored observations and user_prompts when last_assistant_message is empty.
     let lastAssistantMessage = '';
-    try {
-      lastAssistantMessage = extractLastMessage(transcriptPath, 'assistant', true);
-    } catch (err) {
-      logger.warn('HOOK', `Stop hook: failed to extract last assistant message for session ${sessionId}: ${err instanceof Error ? err.message : err}`);
-      return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
-    }
 
-    // Skip summary if transcript has no assistant message (prevents repeated
-    // empty summarize requests that pollute logs — upstream bug)
-    if (!lastAssistantMessage || !lastAssistantMessage.trim()) {
-      logger.debug('HOOK', 'No assistant message in transcript - skipping summary', {
-        sessionId,
-        transcriptPath
+    if (transcriptPath) {
+      try {
+        lastAssistantMessage = extractLastMessage(transcriptPath, 'assistant', true);
+      } catch (err) {
+        logger.warn('HOOK', `Stop hook: failed to extract last assistant message for session ${sessionId}: ${err instanceof Error ? err.message : err}`);
+        return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
+      }
+
+      // Skip summary if transcript has no assistant message (prevents repeated
+      // empty summarize requests that pollute logs — upstream bug)
+      if (!lastAssistantMessage || !lastAssistantMessage.trim()) {
+        logger.debug('HOOK', 'No assistant message in transcript - skipping summary', {
+          sessionId,
+          transcriptPath
+        });
+        return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
+      }
+    } else if (platform === 'cursor') {
+      logger.debug('HOOK', 'Cursor stop hook: no transcript path — queueing observation-based summary', {
+        sessionId
       });
+    } else {
+      logger.debug('HOOK', `No transcriptPath in Stop hook input for session ${sessionId} - skipping summary`);
       return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
     }
 
@@ -72,7 +83,8 @@ export const summarizeHandler: EventHandler = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contentSessionId: sessionId,
-        last_assistant_message: lastAssistantMessage
+        last_assistant_message: lastAssistantMessage,
+        platformSource
       }),
       timeoutMs: SUMMARIZE_TIMEOUT_MS
     });
@@ -114,7 +126,7 @@ export const summarizeHandler: EventHandler = {
       await workerHttpRequest('/api/sessions/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contentSessionId: sessionId }),
+        body: JSON.stringify({ contentSessionId: sessionId, platformSource }),
         timeoutMs: 10_000
       });
       logger.info('HOOK', 'Session completed in Stop hook', { contentSessionId: sessionId });

@@ -48,6 +48,9 @@ export const sessionInitHandler: EventHandler = {
     logger.debug('HOOK', 'session-init: Calling /api/sessions/init', { contentSessionId: sessionId, project });
 
     // Initialize session via HTTP - handles DB operations and privacy checks
+    // Forward OAuth token so the worker daemon can authenticate SDK subprocesses
+    // even if the token wasn't available (or has expired) when the daemon was spawned.
+    const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN || undefined;
     const initResponse = await workerHttpRequest('/api/sessions/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -55,7 +58,8 @@ export const sessionInitHandler: EventHandler = {
         contentSessionId: sessionId,
         project,
         prompt,
-        platformSource
+        platformSource,
+        ...(oauthToken && { oauthToken })
       })
     });
 
