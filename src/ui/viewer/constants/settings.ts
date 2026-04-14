@@ -17,6 +17,9 @@ export const DEFAULT_SETTINGS = {
   CLAUDE_MEM_OPENROUTER_SITE_URL: '',
   CLAUDE_MEM_OPENROUTER_APP_NAME: 'claude-mem',
   CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED: 'true',
+  // AWS Bedrock Configuration
+  CLAUDE_MEM_BEDROCK_REGION: '',
+  CLAUDE_MEM_BEDROCK_MODEL: 'us.anthropic.claude-sonnet-4-6-v1',
 
   // Token Economics — match SettingsDefaultsManager defaults (off by default to keep context lean)
   CLAUDE_MEM_CONTEXT_SHOW_READ_TOKENS: 'false',

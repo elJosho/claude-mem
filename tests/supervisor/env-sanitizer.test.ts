@@ -137,6 +137,8 @@ describe('sanitizeEnv', () => {
     const result = sanitizeEnv({
       CLAUDE_CODE_OAUTH_TOKEN: 'my-oauth-token',
       CLAUDE_CODE_GIT_BASH_PATH: '/usr/bin/bash',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+      CLAUDE_CODE_USE_VERTEX: '1',
       CLAUDE_CODE_RANDOM_OTHER: 'should-be-stripped',
       CLAUDE_CODE_INTERNAL_FLAG: 'should-be-stripped',
       PATH: '/usr/bin'
@@ -145,6 +147,8 @@ describe('sanitizeEnv', () => {
     // Preserved: explicitly allowed CLAUDE_CODE_* vars
     expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBe('my-oauth-token');
     expect(result.CLAUDE_CODE_GIT_BASH_PATH).toBe('/usr/bin/bash');
+    expect(result.CLAUDE_CODE_USE_BEDROCK).toBe('1');
+    expect(result.CLAUDE_CODE_USE_VERTEX).toBe('1');
 
     // Stripped: all other CLAUDE_CODE_* vars
     expect(result.CLAUDE_CODE_RANDOM_OTHER).toBeUndefined();

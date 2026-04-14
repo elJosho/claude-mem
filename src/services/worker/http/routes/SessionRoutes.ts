@@ -14,6 +14,7 @@ import { DatabaseManager } from '../../DatabaseManager.js';
 import { SDKAgent } from '../../SDKAgent.js';
 import { GeminiAgent, isGeminiSelected, isGeminiAvailable } from '../../GeminiAgent.js';
 import { OpenRouterAgent, isOpenRouterSelected, isOpenRouterAvailable } from '../../OpenRouterAgent.js';
+import { BedrockAgent, isBedrockSelected, isBedrockAvailable } from '../../BedrockAgent.js';
 import type { WorkerService } from '../../../worker-service.js';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { SessionEventBroadcaster } from '../../events/SessionEventBroadcaster.js';
@@ -36,6 +37,7 @@ export class SessionRoutes extends BaseRouteHandler {
     private sdkAgent: SDKAgent,
     private geminiAgent: GeminiAgent,
     private openRouterAgent: OpenRouterAgent,
+    private bedrockAgent: BedrockAgent,
     private eventBroadcaster: SessionEventBroadcaster,
     private workerService: WorkerService
   ) {
@@ -54,7 +56,15 @@ export class SessionRoutes extends BaseRouteHandler {
    * Note: Session linking via contentSessionId allows provider switching mid-session.
    * The conversationHistory on ActiveSession maintains context across providers.
    */
-  private getActiveAgent(): SDKAgent | GeminiAgent | OpenRouterAgent {
+  private getActiveAgent(): SDKAgent | GeminiAgent | OpenRouterAgent | BedrockAgent {
+    if (isBedrockSelected()) {
+      if (isBedrockAvailable()) {
+        logger.debug('SESSION', 'Using Bedrock agent');
+        return this.bedrockAgent;
+      } else {
+        throw new Error('Bedrock provider selected but AWS credentials or region not configured. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION environment variables.');
+      }
+    }
     if (isOpenRouterSelected()) {
       if (isOpenRouterAvailable()) {
         logger.debug('SESSION', 'Using OpenRouter agent');
@@ -77,7 +87,10 @@ export class SessionRoutes extends BaseRouteHandler {
   /**
    * Get the currently selected provider name
    */
-  private getSelectedProvider(): 'claude' | 'gemini' | 'openrouter' {
+  private getSelectedProvider(): 'claude' | 'gemini' | 'openrouter' | 'bedrock' {
+    if (isBedrockSelected() && isBedrockAvailable()) {
+      return 'bedrock';
+    }
     if (isOpenRouterSelected() && isOpenRouterAvailable()) {
       return 'openrouter';
     }
@@ -155,7 +168,7 @@ export class SessionRoutes extends BaseRouteHandler {
    */
   private startGeneratorWithProvider(
     session: ReturnType<typeof this.sessionManager.getSession>,
-    provider: 'claude' | 'gemini' | 'openrouter',
+    provider: 'claude' | 'gemini' | 'openrouter' | 'bedrock',
     source: string
   ): void {
     if (!session) return;
@@ -170,8 +183,14 @@ export class SessionRoutes extends BaseRouteHandler {
       session.abortController = new AbortController();
     }
 
-    const agent = provider === 'openrouter' ? this.openRouterAgent : (provider === 'gemini' ? this.geminiAgent : this.sdkAgent);
-    const agentName = provider === 'openrouter' ? 'OpenRouter' : (provider === 'gemini' ? 'Gemini' : 'Claude SDK');
+    const agent = provider === 'bedrock' ? this.bedrockAgent
+      : provider === 'openrouter' ? this.openRouterAgent
+      : provider === 'gemini' ? this.geminiAgent
+      : this.sdkAgent;
+    const agentName = provider === 'bedrock' ? 'Bedrock'
+      : provider === 'openrouter' ? 'OpenRouter'
+      : provider === 'gemini' ? 'Gemini'
+      : 'Claude SDK';
 
     // Use database count for accurate telemetry (in-memory array is always empty due to FK constraint fix)
     const pendingStore = this.sessionManager.getPendingMessageStore();
@@ -748,6 +767,16 @@ export class SessionRoutes extends BaseRouteHandler {
     const platformSource = normalizePlatformSource(req.body.platformSource);
     const customTitle = req.body.customTitle || undefined;
 
+    // Accept OAuth token forwarded from the hook process.
+    // The hook runs inside Claude Code which has the current auth token,
+    // but the worker daemon may have been spawned before auth or with an expired token.
+    // Updating process.env here ensures buildIsolatedEnv() picks up the fresh token
+    // for all subsequent SDK subprocess spawns.
+    if (req.body.oauthToken && req.body.oauthToken !== process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = req.body.oauthToken;
+      logger.info('SESSION', 'Updated OAuth token from hook (auth refresh)');
+    }
+
     logger.info('HTTP', 'SessionRoutes: handleSessionInitByClaudeId called', {
       contentSessionId,
       project,
@@ -773,9 +802,31 @@ export class SessionRoutes extends BaseRouteHandler {
       sessionId: sessionDbId
     });
 
-    // Step 2: Get next prompt number from user_prompts count
-    const currentCount = store.getPromptNumberFromUserPrompts(contentSessionId);
-    const promptNumber = currentCount + 1;
+    // Step 2: Strip privacy tags from prompt
+    const cleanedPrompt = stripMemoryTagsFromPrompt(prompt);
+
+    // Step 3: Check if prompt is entirely private
+    if (!cleanedPrompt || cleanedPrompt.trim() === '') {
+      const wouldBePromptNumber = store.getPromptNumberFromUserPrompts(contentSessionId) + 1;
+      logger.debug('HOOK', 'Session init - prompt entirely private', {
+        sessionId: sessionDbId,
+        promptNumber: wouldBePromptNumber,
+        originalLength: prompt.length
+      });
+
+      res.json({
+        sessionDbId,
+        promptNumber: wouldBePromptNumber,
+        skipped: true,
+        reason: 'private'
+      });
+      return;
+    }
+
+    // Step 4: Save cleaned user prompt (atomic count + insert — avoids duplicate rows from concurrent hooks)
+    const savePromptResult = store.saveNextUserPromptAtomic(contentSessionId, cleanedPrompt);
+    const { promptNumber } = savePromptResult;
+    const skippedDuplicateHook = Boolean(savePromptResult.duplicateSkipped);
 
     // Debug-level alignment logs for detailed tracing
     const memorySessionId = dbSession?.memory_session_id || null;
@@ -785,28 +836,47 @@ export class SessionRoutes extends BaseRouteHandler {
       logger.debug('HTTP', `[ALIGNMENT] New Session | contentSessionId=${contentSessionId} | prompt#=${promptNumber} | memorySessionId will be captured on first SDK response`);
     }
 
-    // Step 3: Strip privacy tags from prompt
-    const cleanedPrompt = stripMemoryTagsFromPrompt(prompt);
-
-    // Step 4: Check if prompt is entirely private
-    if (!cleanedPrompt || cleanedPrompt.trim() === '') {
-      logger.debug('HOOK', 'Session init - prompt entirely private', {
-        sessionId: sessionDbId,
-        promptNumber,
-        originalLength: prompt.length
+    // Step 5: Live viewer + Chroma (parity with POST /sessions/:id/init for Claude Code; Cursor skips that route)
+    // Skip when duplicate hook re-invoked with same prompt — already broadcast/synced on first insert
+    const latestPrompt = skippedDuplicateHook ? undefined : store.getLatestUserPrompt(contentSessionId);
+    if (latestPrompt) {
+      this.eventBroadcaster.broadcastNewPrompt({
+        id: latestPrompt.id,
+        content_session_id: latestPrompt.content_session_id,
+        project: latestPrompt.project,
+        platform_source: latestPrompt.platform_source,
+        prompt_number: latestPrompt.prompt_number,
+        prompt_text: latestPrompt.prompt_text,
+        created_at_epoch: latestPrompt.created_at_epoch
       });
 
-      res.json({
-        sessionDbId,
-        promptNumber,
-        skipped: true,
-        reason: 'private'
+      const chromaStart = Date.now();
+      const promptText = latestPrompt.prompt_text;
+      const memoryKey = latestPrompt.memory_session_id || contentSessionId;
+      this.dbManager.getChromaSync()?.syncUserPrompt(
+        latestPrompt.id,
+        memoryKey,
+        latestPrompt.project,
+        promptText,
+        latestPrompt.prompt_number,
+        latestPrompt.created_at_epoch
+      ).then(() => {
+        const chromaDuration = Date.now() - chromaStart;
+        const truncatedPrompt = promptText.length > 60
+          ? promptText.substring(0, 60) + '...'
+          : promptText;
+        logger.debug('CHROMA', 'User prompt synced', {
+          promptId: latestPrompt.id,
+          duration: `${chromaDuration}ms`,
+          prompt: truncatedPrompt
+        });
+      }).catch((error) => {
+        logger.error('CHROMA', 'User prompt sync failed, continuing without vector search', {
+          promptId: latestPrompt.id,
+          prompt: promptText.length > 60 ? promptText.substring(0, 60) + '...' : promptText
+        }, error);
       });
-      return;
     }
-
-    // Step 5: Save cleaned user prompt
-    store.saveUserPrompt(contentSessionId, promptNumber, cleanedPrompt);
 
     // Step 6: Check if SDK agent is already running for this session (#1079)
     // If contextInjected is true, the hook should skip re-initializing the SDK agent

@@ -18,7 +18,7 @@ export interface SettingsDefaults {
   CLAUDE_MEM_WORKER_HOST: string;
   CLAUDE_MEM_SKIP_TOOLS: string;
   // AI Provider Configuration
-  CLAUDE_MEM_PROVIDER: string;  // 'claude' | 'gemini' | 'openrouter'
+  CLAUDE_MEM_PROVIDER: string;  // 'claude' | 'gemini' | 'openrouter' | 'bedrock'
   CLAUDE_MEM_CLAUDE_AUTH_METHOD: string;  // 'cli' | 'api' - how Claude provider authenticates
   CLAUDE_MEM_GEMINI_API_KEY: string;
   CLAUDE_MEM_GEMINI_MODEL: string;  // 'gemini-2.5-flash-lite' | 'gemini-2.5-flash' | 'gemini-3-flash-preview'
@@ -31,6 +31,11 @@ export interface SettingsDefaults {
   CLAUDE_MEM_OPENROUTER_APP_NAME: string;
   CLAUDE_MEM_OPENROUTER_MAX_CONTEXT_MESSAGES: string;
   CLAUDE_MEM_OPENROUTER_MAX_TOKENS: string;
+  // AWS Bedrock Configuration
+  CLAUDE_MEM_BEDROCK_REGION: string;  // AWS region for Bedrock (e.g. 'us-east-1')
+  CLAUDE_MEM_BEDROCK_MODEL: string;  // Bedrock model ID (e.g. 'us.anthropic.claude-sonnet-4-6-v1')
+  CLAUDE_MEM_BEDROCK_MAX_CONTEXT_MESSAGES: string;  // Max messages in Bedrock context window
+  CLAUDE_MEM_BEDROCK_MAX_TOKENS: string;  // Max estimated tokens for Bedrock context
   // System Configuration
   CLAUDE_MEM_DATA_DIR: string;
   CLAUDE_MEM_LOG_LEVEL: string;
@@ -102,6 +107,11 @@ export class SettingsDefaultsManager {
     CLAUDE_MEM_OPENROUTER_APP_NAME: 'claude-mem',  // App name for OpenRouter analytics
     CLAUDE_MEM_OPENROUTER_MAX_CONTEXT_MESSAGES: '20',  // Max messages in context window
     CLAUDE_MEM_OPENROUTER_MAX_TOKENS: '100000',  // Max estimated tokens (~100k safety limit)
+    // AWS Bedrock Configuration
+    CLAUDE_MEM_BEDROCK_REGION: '',  // Empty = use AWS_REGION or AWS_DEFAULT_REGION env var
+    CLAUDE_MEM_BEDROCK_MODEL: 'us.anthropic.claude-sonnet-4-6-v1',  // Default Bedrock model (cross-region inference)
+    CLAUDE_MEM_BEDROCK_MAX_CONTEXT_MESSAGES: '20',  // Max messages in Bedrock context window
+    CLAUDE_MEM_BEDROCK_MAX_TOKENS: '100000',  // Max estimated tokens (~100k safety limit)
     // System Configuration
     CLAUDE_MEM_DATA_DIR: join(homedir(), '.claude-mem'),
     CLAUDE_MEM_LOG_LEVEL: 'INFO',
