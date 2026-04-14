@@ -10,6 +10,7 @@
 import { DatabaseManager } from './DatabaseManager.js';
 import { logger } from '../../utils/logger.js';
 import type { PaginatedResult, Observation, Summary, UserPrompt } from '../worker-types.js';
+import { OBSERVER_SESSIONS_PROJECT } from '../../shared/paths.js';
 
 export class PaginationHelper {
   private dbManager: DatabaseManager;
@@ -73,12 +74,20 @@ export class PaginationHelper {
    */
   getObservations(offset: number, limit: number, project?: string, platformSource?: string): PaginatedResult<Observation> {
     const db = this.dbManager.getSessionStore().db;
+    // Resolve platform_source by walking up the session chain:
+    // observations.memory_session_id -> sdk_sessions (s) via memory_session_id
+    // If s is an internal observer session, look for the parent session (p)
+    // whose memory_session_id equals s.content_session_id
     let query = `
       SELECT
         o.id,
         o.memory_session_id,
         o.project,
-        COALESCE(s.platform_source, 'claude') as platform_source,
+        COALESCE(
+          CASE WHEN s.project = '${OBSERVER_SESSIONS_PROJECT}' THEN p.platform_source ELSE s.platform_source END,
+          s.platform_source,
+          'claude'
+        ) as platform_source,
         o.type,
         o.title,
         o.subtitle,
@@ -93,16 +102,24 @@ export class PaginationHelper {
         o.created_at_epoch
       FROM observations o
       LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
+      LEFT JOIN sdk_sessions p ON s.content_session_id = p.memory_session_id
     `;
     const params: unknown[] = [];
     const conditions: string[] = [];
+
+    // Always exclude internal observer-sessions from the UI
+    conditions.push(`o.project != '${OBSERVER_SESSIONS_PROJECT}'`);
 
     if (project) {
       conditions.push('o.project = ?');
       params.push(project);
     }
     if (platformSource) {
-      conditions.push(`COALESCE(s.platform_source, 'claude') = ?`);
+      conditions.push(`COALESCE(
+        CASE WHEN s.project = '${OBSERVER_SESSIONS_PROJECT}' THEN p.platform_source ELSE s.platform_source END,
+        s.platform_source,
+        'claude'
+      ) = ?`);
       params.push(platformSource);
     }
     if (conditions.length > 0) {
@@ -136,8 +153,12 @@ export class PaginationHelper {
     let query = `
       SELECT
         ss.id,
-        s.content_session_id as session_id,
-        COALESCE(s.platform_source, 'claude') as platform_source,
+        COALESCE(s.content_session_id, p.content_session_id) as session_id,
+        COALESCE(
+          CASE WHEN s.project = '${OBSERVER_SESSIONS_PROJECT}' THEN p.platform_source ELSE s.platform_source END,
+          s.platform_source,
+          'claude'
+        ) as platform_source,
         ss.request,
         ss.investigated,
         ss.learned,
@@ -148,10 +169,14 @@ export class PaginationHelper {
         ss.created_at_epoch
       FROM session_summaries ss
       JOIN sdk_sessions s ON ss.memory_session_id = s.memory_session_id
+      LEFT JOIN sdk_sessions p ON s.content_session_id = p.memory_session_id
     `;
     const params: any[] = [];
 
     const conditions: string[] = [];
+
+    // Always exclude internal observer-sessions from the UI
+    conditions.push(`ss.project != '${OBSERVER_SESSIONS_PROJECT}'`);
 
     if (project) {
       conditions.push('ss.project = ?');
@@ -159,7 +184,11 @@ export class PaginationHelper {
     }
 
     if (platformSource) {
-      conditions.push(`COALESCE(s.platform_source, 'claude') = ?`);
+      conditions.push(`COALESCE(
+        CASE WHEN s.project = '${OBSERVER_SESSIONS_PROJECT}' THEN p.platform_source ELSE s.platform_source END,
+        s.platform_source,
+        'claude'
+      ) = ?`);
       params.push(platformSource);
     }
 
@@ -203,6 +232,9 @@ export class PaginationHelper {
     const params: any[] = [];
 
     const conditions: string[] = [];
+
+    // Always exclude internal observer-sessions from the UI
+    conditions.push(`s.project != '${OBSERVER_SESSIONS_PROJECT}'`);
 
     if (project) {
       conditions.push('s.project = ?');

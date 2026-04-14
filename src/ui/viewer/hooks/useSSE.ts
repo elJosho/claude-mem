@@ -3,6 +3,8 @@ import { Observation, Summary, UserPrompt, StreamEvent, ProjectCatalog } from '.
 import { API_ENDPOINTS } from '../constants/api';
 import { TIMING } from '../constants/timing';
 
+const OBSERVER_SESSIONS_PROJECT = 'observer-sessions';
+
 export function useSSE() {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [summaries, setSummaries] = useState<Summary[]>([]);
@@ -87,7 +89,7 @@ export function useSSE() {
             break;
 
           case 'new_observation':
-            if (data.observation) {
+            if (data.observation && data.observation.project !== OBSERVER_SESSIONS_PROJECT) {
               console.log('[SSE] New observation:', data.observation.id);
               updateCatalogForItem(data.observation.project, data.observation.platform_source || 'claude');
               setObservations(prev => [data.observation!, ...prev]);
@@ -95,7 +97,7 @@ export function useSSE() {
             break;
 
           case 'new_summary':
-            if (data.summary) {
+            if (data.summary && data.summary.project !== OBSERVER_SESSIONS_PROJECT) {
               console.log('[SSE] New summary:', data.summary.id);
               updateCatalogForItem(data.summary.project, data.summary.platform_source || 'claude');
               setSummaries(prev => [data.summary!, ...prev]);
@@ -103,7 +105,7 @@ export function useSSE() {
             break;
 
           case 'new_prompt':
-            if (data.prompt) {
+            if (data.prompt && data.prompt.project !== OBSERVER_SESSIONS_PROJECT) {
               console.log('[SSE] New prompt:', data.prompt.id);
               updateCatalogForItem(data.prompt.project, data.prompt.platform_source || 'claude');
               setPrompts(prev => [data.prompt!, ...prev]);

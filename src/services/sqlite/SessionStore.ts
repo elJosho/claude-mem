@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import { DATA_DIR, DB_PATH, ensureDir } from '../../shared/paths.js';
+import { DATA_DIR, DB_PATH, ensureDir, OBSERVER_SESSIONS_PROJECT } from '../../shared/paths.js';
 import { logger } from '../../utils/logger.js';
 import {
   TableColumnInfo,
@@ -1217,7 +1217,7 @@ export class SessionStore {
         project,
         MAX(started_at_epoch) as latest_epoch
       FROM sdk_sessions
-      WHERE project IS NOT NULL AND project != ''
+      WHERE project IS NOT NULL AND project != '' AND project != '${OBSERVER_SESSIONS_PROJECT}'
       GROUP BY COALESCE(platform_source, '${DEFAULT_PLATFORM_SOURCE}'), project
       ORDER BY latest_epoch DESC
     `).all() as Array<{ platform_source: string; project: string; latest_epoch: number }>;
@@ -1666,6 +1666,67 @@ export class SessionStore {
 
     const result = stmt.run(contentSessionId, promptNumber, promptText, now.toISOString(), nowEpoch);
     return result.lastInsertRowid as number;
+  }
+
+  /**
+   * Atomically allocate the next prompt_number and insert one row.
+   * Prevents duplicate prompts when Cursor (or any platform) runs concurrent beforeSubmit hooks.
+   *
+   * Also skips a second insert when the same prompt text arrives again within a few seconds
+   * (duplicate hook invocation — e.g. Cursor firing beforeSubmit twice or user+project hooks).
+   */
+  saveNextUserPromptAtomic(contentSessionId: string, promptText: string): {
+    id: number;
+    promptNumber: number;
+    created_at_epoch: number;
+    duplicateSkipped?: boolean;
+  } {
+    const DUPLICATE_PROMPT_WINDOW_MS = 2000;
+    const latest = this.getLatestUserPrompt(contentSessionId);
+    if (
+      latest &&
+      latest.prompt_text === promptText &&
+      Date.now() - latest.created_at_epoch < DUPLICATE_PROMPT_WINDOW_MS
+    ) {
+      logger.debug('DEDUP', 'Skipped duplicate user_prompt (same text within window)', {
+        contentSessionId,
+        promptNumber: latest.prompt_number
+      });
+      return {
+        id: latest.id,
+        promptNumber: latest.prompt_number,
+        created_at_epoch: latest.created_at_epoch,
+        duplicateSkipped: true
+      };
+    }
+
+    const tx = this.db.transaction(() => {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) as c FROM user_prompts WHERE content_session_id = ?
+      `).get(contentSessionId) as { c: number };
+      const promptNumber = row.c + 1;
+      const now = new Date();
+      const nowEpoch = now.getTime();
+      const stmt = this.db.prepare(`
+        INSERT INTO user_prompts
+        (content_session_id, prompt_number, prompt_text, created_at, created_at_epoch)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const result = stmt.run(
+        contentSessionId,
+        promptNumber,
+        promptText,
+        now.toISOString(),
+        nowEpoch
+      );
+      return {
+        id: Number(result.lastInsertRowid),
+        promptNumber,
+        created_at_epoch: nowEpoch,
+        duplicateSkipped: false
+      };
+    });
+    return tx();
   }
 
   /**

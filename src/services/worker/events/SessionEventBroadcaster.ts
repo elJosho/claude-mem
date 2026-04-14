@@ -8,6 +8,7 @@
 import { SSEBroadcaster } from '../SSEBroadcaster.js';
 import type { WorkerService } from '../../worker-service.js';
 import { logger } from '../../../utils/logger.js';
+import { OBSERVER_SESSIONS_PROJECT } from '../../../shared/paths.js';
 
 export class SessionEventBroadcaster {
   constructor(
@@ -28,6 +29,13 @@ export class SessionEventBroadcaster {
     prompt_text: string;
     created_at_epoch: number;
   }): void {
+    // Don't broadcast observer-session prompts to the viewer UI
+    if (prompt.project === OBSERVER_SESSIONS_PROJECT) {
+      // Still update processing status
+      this.workerService.broadcastProcessingStatus();
+      return;
+    }
+
     // Broadcast prompt details
     this.sseBroadcaster.broadcast({
       type: 'new_prompt',

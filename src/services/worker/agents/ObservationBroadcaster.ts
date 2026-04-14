@@ -13,6 +13,7 @@
 
 import type { WorkerRef, ObservationSSEPayload, SummarySSEPayload } from './types.js';
 import { logger } from '../../../utils/logger.js';
+import { OBSERVER_SESSIONS_PROJECT } from '../../../shared/paths.js';
 
 /**
  * Broadcast a new observation to SSE clients
@@ -25,6 +26,11 @@ export function broadcastObservation(
   payload: ObservationSSEPayload
 ): void {
   if (!worker?.sseBroadcaster) {
+    return;
+  }
+
+  // Don't broadcast observer-session observations to the viewer UI
+  if (payload.project === OBSERVER_SESSIONS_PROJECT) {
     return;
   }
 
@@ -45,6 +51,11 @@ export function broadcastSummary(
   payload: SummarySSEPayload
 ): void {
   if (!worker?.sseBroadcaster) {
+    return;
+  }
+
+  // Don't broadcast observer-session summaries to the viewer UI
+  if (payload.project === OBSERVER_SESSIONS_PROJECT) {
     return;
   }
 

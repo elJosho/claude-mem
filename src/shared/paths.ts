@@ -74,6 +74,9 @@ export const VECTOR_DB_DIR = join(DATA_DIR, 'vector-db');
 // Observer sessions directory - used as cwd for SDK queries
 // Sessions here won't appear in user's `claude --resume` for their actual projects
 export const OBSERVER_SESSIONS_DIR = join(DATA_DIR, 'observer-sessions');
+// Project name derived from OBSERVER_SESSIONS_DIR by getProjectName() heuristic
+// Used to filter internal memory-agent sessions from user-facing UI
+export const OBSERVER_SESSIONS_PROJECT = 'observer-sessions';
 
 // Claude integration paths
 export const CLAUDE_SETTINGS_PATH = join(CLAUDE_CONFIG_DIR, 'settings.json');
