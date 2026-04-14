@@ -85,8 +85,27 @@ export async function processAgentResponse(
   // Convert nullable fields to empty strings for storeSummary (if summary exists)
   const summaryForStore = normalizeSummaryForStorage(summary);
 
+  const hasPersistableWork = observations.length > 0 || summaryForStore !== null;
+
   // Get session store for atomic transaction
   const sessionStore = dbManager.getSessionStore();
+
+  // Observer may emit an empty or non-XML assistant turn before session_id is wired.
+  // Do not throw — confirm the queue so the generator can continue (e.g. Cursor summarize).
+  if (!hasPersistableWork) {
+    const pendingStore = sessionManager.getPendingMessageStore();
+    for (const messageId of session.processingMessageIds) {
+      pendingStore.confirmProcessed(messageId);
+    }
+    if (session.processingMessageIds.length > 0) {
+      logger.debug('QUEUE', `CONFIRMED_BATCH | sessionDbId=${session.sessionDbId} | count=${session.processingMessageIds.length} | reason=no_storage`, {
+        sessionId: session.sessionDbId
+      });
+    }
+    session.processingMessageIds = [];
+    cleanupProcessedMessages(session, worker);
+    return;
+  }
 
   // CRITICAL: Must use memorySessionId (not contentSessionId) for FK constraint
   if (!session.memorySessionId) {

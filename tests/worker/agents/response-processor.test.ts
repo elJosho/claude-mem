@@ -236,9 +236,8 @@ describe('ResponseProcessor', () => {
           preview: responseText
         })
       );
-      const [, , observations, summary] = mockStoreObservations.mock.calls[0];
-      expect(observations).toHaveLength(0);
-      expect(summary).toBeNull();
+      // No storage when nothing parseable — early exit (e.g. Cursor summarize path)
+      expect(mockStoreObservations).not.toHaveBeenCalled();
     });
   });
 
@@ -499,11 +498,8 @@ describe('ResponseProcessor', () => {
         'TestAgent'
       );
 
-      // Should still call storeObservations with empty arrays
-      expect(mockStoreObservations).toHaveBeenCalledTimes(1);
-      const [, , observations, summary] = mockStoreObservations.mock.calls[0];
-      expect(observations).toHaveLength(0);
-      expect(summary).toBeNull();
+      // Nothing to persist — skip DB write but still advance queue state
+      expect(mockStoreObservations).not.toHaveBeenCalled();
     });
 
     it('should handle response with only text (no XML)', async () => {
@@ -532,9 +528,8 @@ describe('ResponseProcessor', () => {
         'TestAgent'
       );
 
-      expect(mockStoreObservations).toHaveBeenCalledTimes(1);
-      const [, , observations] = mockStoreObservations.mock.calls[0];
-      expect(observations).toHaveLength(0);
+      expect(logger.warn).toHaveBeenCalled();
+      expect(mockStoreObservations).not.toHaveBeenCalled();
     });
   });
 

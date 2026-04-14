@@ -25,6 +25,13 @@ export class PrivacyCheckValidator {
     sessionDbId: number,
     additionalContext?: Record<string, any>
   ): string | null {
+    // If no user prompts have been stored at all (e.g. OpenCode sessions that
+    // don't go through the session-init hook), allow through — this is not the
+    // same as a prompt that existed and was entirely stripped for privacy.
+    if (promptNumber === 0) {
+      return '[no-prompt]';
+    }
+
     const userPrompt = store.getUserPrompt(contentSessionId, promptNumber);
 
     if (!userPrompt || userPrompt.trim() === '') {

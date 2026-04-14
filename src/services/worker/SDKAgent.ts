@@ -161,33 +161,37 @@ export class SDKAgent {
         // 2. It verifies the update happened (SELECT before UPDATE)
         // 3. Consistent with ResponseProcessor's usage pattern
         // This ensures FK constraint compliance BEFORE any observations are stored.
-        if (message.session_id && message.session_id !== session.memorySessionId) {
+        const incomingSessionId =
+          (message as { session_id?: string }).session_id
+          ?? (message as { message?: { session_id?: string } }).message?.session_id;
+
+        if (incomingSessionId && incomingSessionId !== session.memorySessionId) {
           const previousId = session.memorySessionId;
-          session.memorySessionId = message.session_id;
+          session.memorySessionId = incomingSessionId;
           // Persist to database IMMEDIATELY for FK constraint compliance
           // This must happen BEFORE any observations referencing this ID are stored
           this.dbManager.getSessionStore().ensureMemorySessionIdRegistered(
             session.sessionDbId,
-            message.session_id
+            incomingSessionId
           );
           // Verify the update by reading back from DB
           const verification = this.dbManager.getSessionStore().getSessionById(session.sessionDbId);
-          const dbVerified = verification?.memory_session_id === message.session_id;
+          const dbVerified = verification?.memory_session_id === incomingSessionId;
           const logMessage = previousId
-            ? `MEMORY_ID_CHANGED | sessionDbId=${session.sessionDbId} | from=${previousId} | to=${message.session_id} | dbVerified=${dbVerified}`
-            : `MEMORY_ID_CAPTURED | sessionDbId=${session.sessionDbId} | memorySessionId=${message.session_id} | dbVerified=${dbVerified}`;
+            ? `MEMORY_ID_CHANGED | sessionDbId=${session.sessionDbId} | from=${previousId} | to=${incomingSessionId} | dbVerified=${dbVerified}`
+            : `MEMORY_ID_CAPTURED | sessionDbId=${session.sessionDbId} | memorySessionId=${incomingSessionId} | dbVerified=${dbVerified}`;
           logger.info('SESSION', logMessage, {
             sessionId: session.sessionDbId,
-            memorySessionId: message.session_id,
+            memorySessionId: incomingSessionId,
             previousId
           });
           if (!dbVerified) {
-            logger.error('SESSION', `MEMORY_ID_MISMATCH | sessionDbId=${session.sessionDbId} | expected=${message.session_id} | got=${verification?.memory_session_id}`, {
+            logger.error('SESSION', `MEMORY_ID_MISMATCH | sessionDbId=${session.sessionDbId} | expected=${incomingSessionId} | got=${verification?.memory_session_id}`, {
               sessionId: session.sessionDbId
             });
           }
           // Debug-level alignment log for detailed tracing
-          logger.debug('SDK', `[ALIGNMENT] ${previousId ? 'Updated' : 'Captured'} | contentSessionId=${session.contentSessionId} → memorySessionId=${message.session_id} | Future prompts will resume with this ID`);
+          logger.debug('SDK', `[ALIGNMENT] ${previousId ? 'Updated' : 'Captured'} | contentSessionId=${session.contentSessionId} → memorySessionId=${incomingSessionId} | Future prompts will resume with this ID`);
         }
 
         // Handle assistant messages
@@ -258,6 +262,16 @@ export class SDKAgent {
           // Throw so it surfaces in health endpoint and prevents silent failures.
           if (typeof textContent === 'string' && textContent.includes('Invalid API key')) {
             throw new Error('Invalid API key: check your API key configuration in ~/.claude-mem/settings.json or ~/.claude-mem/.env');
+          }
+
+          // Detect "Not logged in" — SDK returns this as response text when the
+          // spawned Claude CLI has no valid credentials (no API key, no OAuth token).
+          // This commonly happens when the worker daemon's inherited auth token expires.
+          if (typeof textContent === 'string' && textContent.includes('Not logged in')) {
+            throw new Error(
+              'Claude CLI is not logged in. The memory agent cannot authenticate.\n' +
+              'Fix: set ANTHROPIC_API_KEY in ~/.claude-mem/.env, or restart the worker after re-authenticating Claude Code.'
+            );
           }
 
           // Parse and process response using shared ResponseProcessor

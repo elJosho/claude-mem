@@ -127,12 +127,16 @@ Never reply with prose such as "Skipping", "No substantive tool executions", or 
  * Build prompt to generate progress summary
  */
 export function buildSummaryPrompt(session: SDKSession, mode: ModeConfig): string {
-  const lastAssistantMessage = session.last_assistant_message || (() => {
-    logger.error('SDK', 'Missing last_assistant_message in session for summary prompt', {
-      sessionId: session.id
-    });
-    return '';
-  })();
+  // Empty string is valid (e.g. Cursor has no transcript; summary uses observations only).
+  const lastAssistantMessage =
+    session.last_assistant_message === undefined || session.last_assistant_message === null
+      ? (() => {
+          logger.error('SDK', 'Missing last_assistant_message in session for summary prompt', {
+            sessionId: session.id
+          });
+          return '';
+        })()
+      : session.last_assistant_message;
 
   return `--- MODE SWITCH: PROGRESS SUMMARY ---
 Do NOT output <observation> tags. This is a summary request, not an observation request.
