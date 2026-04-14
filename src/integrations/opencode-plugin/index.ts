@@ -180,6 +180,10 @@ async function refreshAgentsMdContext(projectName: string): Promise<void> {
 const contentSessionIdsByOpenCodeSessionId = new Map<string, string>();
 /** Tracks whether we've already sent a real user prompt for a given OpenCode session */
 const sessionPromptSent = new Set<string>();
+/** Accumulates text parts per part ID from message.part.updated events */
+const messageTextParts = new Map<string, string>();
+/** Maps messageID → role from message.updated events */
+const messageRoles = new Map<string, string>();
 
 const MAX_SESSION_MAP_ENTRIES = 1000;
 
@@ -214,6 +218,85 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
     : "opencode";
 
   console.log(`[claude-mem] OpenCode plugin loading (project: ${projectName})`);
+
+  // ------------------------------------------------------------------
+  // Helper: Collect text from accumulated parts for a given messageID.
+  // Parts are keyed by part.id in messageTextParts.  We match by checking
+  // which part IDs belong to a given messageID via a naming convention or
+  // by scanning.  Since message.part.updated gives us part.messageID, we
+  // need a reverse index.
+  // ------------------------------------------------------------------
+
+  /** Maps partId → messageID so we can collect all parts for a message */
+  const partToMessage = new Map<string, string>();
+  /** Tracks assistant messages we've already sent as observations */
+  const assistantMessagesSent = new Set<string>();
+
+  function collectTextForMessage(messageId: string): string {
+    const texts: string[] = [];
+    for (const [partId, msgId] of partToMessage) {
+      if (msgId === messageId) {
+        const text = messageTextParts.get(partId);
+        if (text) texts.push(text);
+      }
+    }
+    return texts.join("\n");
+  }
+
+  /**
+   * Handles text for a message once we know its role and have parts.
+   * For user messages: sends session init with the actual prompt text.
+   * For assistant messages: sends observation with the response text.
+   * 
+   * calledFrom indicates whether this was triggered by a part update or
+   * a message update.  Assistant observations are only sent from
+   * message.updated (which fires once when the message is finalized)
+   * to avoid flooding during streaming part updates.
+   */
+  async function handleMessageText(
+    ocSessionId: string,
+    messageId: string,
+    role: string,
+    _ctx: OpenCodePluginContext,
+    _projectName: string,
+    calledFrom: "part" | "message" = "message",
+  ): Promise<void> {
+    const contentSessionId = getOrCreateContentSessionId(ocSessionId);
+    const messageText = collectTextForMessage(messageId);
+
+    if (role === "user") {
+      if (!messageText || sessionPromptSent.has(ocSessionId)) return;
+      sessionPromptSent.add(ocSessionId);
+      await workerPost("/api/sessions/init", {
+        contentSessionId,
+        project: _projectName,
+        prompt: messageText,
+        platformSource: "opencode",
+      });
+      return;
+    }
+
+    // Only send assistant observations from message.updated to avoid
+    // flooding during streaming.  message.updated fires each time the
+    // message object changes (including when finish reason is set).
+    if (role === "assistant" && calledFrom === "message") {
+      if (assistantMessagesSent.has(messageId)) return;
+      let text = messageText;
+      if (!text) return;
+      assistantMessagesSent.add(messageId);
+      if (text.length > MAX_TOOL_RESPONSE_LENGTH) {
+        text = text.slice(0, MAX_TOOL_RESPONSE_LENGTH);
+      }
+      await workerPost("/api/sessions/observations", {
+        contentSessionId,
+        tool_name: "assistant_message",
+        tool_input: {},
+        tool_response: text,
+        cwd: _ctx.directory,
+        platformSource: "opencode",
+      });
+    }
+  }
 
   return {
     // ------------------------------------------------------------------
@@ -259,51 +342,43 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
           break;
         }
 
+        // ------------------------------------------------------------------
+        // message.part.updated: Fires for each part of a message.
+        // OpenCode delivers parts separately — NOT inside message.updated.
+        // We accumulate text parts here and use them for session init and
+        // assistant message observations.
+        // ------------------------------------------------------------------
+        case "message.part.updated": {
+          const props = event.properties as {
+            part: { id: string; sessionID: string; messageID: string; type: string; text?: string };
+            delta?: string;
+          };
+          const part = props.part;
+          if (part.type !== "text" || !part.text) break;
+
+          // Accumulate/replace text for this part (parts update in-place)
+          messageTextParts.set(part.id, part.text);
+          partToMessage.set(part.id, part.messageID);
+
+          // Check if we know the role for this message yet
+          const role = messageRoles.get(part.messageID);
+          if (role) {
+            await handleMessageText(part.sessionID, part.messageID, role, ctx, projectName, "part");
+          }
+          break;
+        }
+
         case "message.updated": {
-          const props = event.properties as { info: { sessionID: string; role: string; parts?: Array<{ type: string; text?: string }> } };
+          const props = event.properties as { info: { id: string; sessionID: string; role: string } };
+          const msgId = props.info.id;
           const ocSessionId = props.info.sessionID;
-          const contentSessionId = getOrCreateContentSessionId(ocSessionId);
+          const role = props.info.role;
 
-          // Extract text from parts array
-          const parts = props.info.parts || [];
-          let messageText = parts
-            .filter((p) => p.type === "text" && p.text)
-            .map((p) => p.text || "")
-            .join("\n");
+          // Record the role so message.part.updated can use it
+          messageRoles.set(msgId, role);
 
-          // Capture user messages as session prompts.
-          // Init is deferred from session.created to here so we always have
-          // the actual user prompt text rather than sending an empty string
-          // (which the worker substitutes as '[media prompt]').
-          if (props.info.role === "user") {
-            if (!sessionPromptSent.has(ocSessionId)) {
-              sessionPromptSent.add(ocSessionId);
-              await workerPost("/api/sessions/init", {
-                contentSessionId,
-                project: projectName,
-                prompt: messageText || "(media/image prompt)",
-                platformSource: "opencode",
-              });
-            }
-            break;
-          }
-
-          // Only capture assistant messages as observations
-          if (props.info.role !== "assistant") break;
-
-          if (messageText.length > MAX_TOOL_RESPONSE_LENGTH) {
-            messageText = messageText.slice(0, MAX_TOOL_RESPONSE_LENGTH);
-          }
-          if (!messageText) break;
-
-          await workerPost("/api/sessions/observations", {
-            contentSessionId,
-            tool_name: "assistant_message",
-            tool_input: {},
-            tool_response: messageText,
-            cwd: ctx.directory,
-            platformSource: "opencode",
-          });
+          // If parts already arrived before this event, process now
+          await handleMessageText(ocSessionId, msgId, role, ctx, projectName);
           break;
         }
 
