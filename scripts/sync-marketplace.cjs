@@ -103,6 +103,20 @@ try {
   console.log(`Running bun install in cache folder (version ${version})...`);
   execSync(`bun install`, { cwd: CACHE_VERSION_PATH, stdio: 'inherit' });
 
+  // Install OpenCode plugin to ~/.config/opencode/plugins/claude-mem.js
+  const openCodePluginSrc = path.join(__dirname, '..', 'dist', 'opencode-plugin', 'index.js');
+  const openCodePluginsDir = path.join(os.homedir(), '.config', 'opencode', 'plugins');
+  const openCodePluginDst = path.join(openCodePluginsDir, 'claude-mem.js');
+  if (existsSync(openCodePluginSrc)) {
+    try {
+      require('fs').mkdirSync(openCodePluginsDir, { recursive: true });
+      require('fs').copyFileSync(openCodePluginSrc, openCodePluginDst);
+      console.log(`✓ OpenCode plugin synced to ${openCodePluginDst}`);
+    } catch (e) {
+      console.log(`ℹ Could not sync OpenCode plugin: ${e.message}`);
+    }
+  }
+
   console.log('\x1b[32m%s\x1b[0m', 'Sync complete!');
 
   // Trigger worker restart after file sync

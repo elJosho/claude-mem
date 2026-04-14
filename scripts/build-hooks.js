@@ -380,6 +380,7 @@ async function buildHooks() {
         external: [
           'fs', 'fs/promises', 'path', 'os', 'child_process', 'url',
           'crypto', 'http', 'https', 'net', 'stream', 'util', 'events',
+          '@opencode-ai/plugin', 'zod',
         ],
       });
 
