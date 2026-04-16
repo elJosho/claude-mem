@@ -3,6 +3,7 @@ import { getPlatformAdapter } from './adapters/index.js';
 import { getEventHandler } from './handlers/index.js';
 import { HOOK_EXIT_CODES } from '../shared/hook-constants.js';
 import { logger } from '../utils/logger.js';
+import { OBSERVER_SESSIONS_DIR } from '../shared/paths.js';
 
 export interface HookCommandOptions {
   /** If true, don't call process.exit() - let caller handle process lifecycle */
@@ -79,6 +80,19 @@ export async function hookCommand(platform: string, event: string, options: Hook
     const rawInput = await readJsonFromStdin();
     const input = adapter.normalizeInput(rawInput);
     input.platform = platform;  // Inject platform for handler-level decisions
+
+    // Guard: never process hooks fired from observer-session subprocesses.
+    // The SDKAgent spawns Claude CLI in OBSERVER_SESSIONS_DIR, which triggers
+    // global hooks — storing its system prompts and tool calls as user data.
+    if (input.cwd && input.cwd.startsWith(OBSERVER_SESSIONS_DIR)) {
+      logger.debug('HOOK', `Skipping hook for observer-session subprocess: ${event}`, { cwd: input.cwd });
+      console.log(JSON.stringify(adapter.formatOutput({ continue: true, suppressOutput: true })));
+      if (!options.skipExit) {
+        process.exit(HOOK_EXIT_CODES.SUCCESS);
+      }
+      return HOOK_EXIT_CODES.SUCCESS;
+    }
+
     const result = await handler.execute(input);
     const output = adapter.formatOutput(result);
 

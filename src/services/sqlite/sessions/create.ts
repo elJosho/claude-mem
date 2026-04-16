@@ -6,6 +6,7 @@
 import type { Database } from 'bun:sqlite';
 import { logger } from '../../../utils/logger.js';
 import { DEFAULT_PLATFORM_SOURCE, normalizePlatformSource } from '../../../shared/platform-source.js';
+import { OBSERVER_SESSIONS_PROJECT } from '../../../shared/paths.js';
 
 function resolveCreateSessionArgs(
   customTitle?: string,
@@ -82,6 +83,14 @@ export function createSDKSession(
     return existing.id;
   }
 
+  // Defense-in-depth: never create sessions for observer-session subprocesses.
+  // The hook-level guard in hook-command.ts is the primary filter; this catches
+  // any direct API calls that slip through.
+  if (project === OBSERVER_SESSIONS_PROJECT) {
+    logger.warn('DB', `Blocked creation of observer-session record: ${contentSessionId}`);
+    throw new Error(`Refusing to create session with project="${OBSERVER_SESSIONS_PROJECT}"`);
+  }
+
   // New session - insert fresh row
   // NOTE: memory_session_id starts as NULL. It is captured by SDKAgent from the first SDK
   // response and stored via ensureMemorySessionIdRegistered(). CRITICAL: memory_session_id
@@ -96,6 +105,23 @@ export function createSDKSession(
   const row = db.prepare('SELECT id FROM sdk_sessions WHERE content_session_id = ?')
     .get(contentSessionId) as { id: number };
   return row.id;
+}
+
+/**
+ * Look up an existing session by contentSessionId. Returns null if not found.
+ *
+ * Use this instead of createSDKSession when the caller should NOT create a new
+ * session (e.g., observation/summarize/status/complete endpoints that arrive
+ * after session-init has already created the row).
+ */
+export function lookupSessionDbId(
+  db: Database,
+  contentSessionId: string
+): number | null {
+  const row = db.prepare(
+    'SELECT id FROM sdk_sessions WHERE content_session_id = ?'
+  ).get(contentSessionId) as { id: number } | undefined;
+  return row?.id ?? null;
 }
 
 /**
