@@ -56,9 +56,86 @@ interface OCEvent {
 const WORKER_BASE_URL = "http://127.0.0.1:37777";
 const MAX_TOOL_RESPONSE_LENGTH = 1000;
 
+/**
+ * Minimum character length for a message to be considered a potential skill prompt.
+ * Real user prompts are almost never this long as a single message.
+ */
+const SKILL_PROMPT_MIN_LENGTH = 500;
+
 // Tag constants for AGENTS.md context injection (must match context-injection.ts)
 const CONTEXT_TAG_OPEN = "<claude-mem-context>";
 const CONTEXT_TAG_CLOSE = "</claude-mem-context>";
+
+// ============================================================================
+// Skill Prompt Detection & Stripping
+// ============================================================================
+
+/**
+ * Detect and strip skill preamble from user messages.
+ *
+ * When OpenCode loads a skill (e.g. /datalake), it prepends the entire SKILL.md
+ * content to the first user message. The user's actual query is appended at the
+ * end after the skill instructions. This function detects skill-like preamble
+ * and extracts only the user's real prompt.
+ *
+ * Detection heuristics (all must be true):
+ * - Message is longer than SKILL_PROMPT_MIN_LENGTH chars
+ * - Starts with a markdown heading (# )
+ * - Contains instructional patterns (## sections, code blocks, tables)
+ *
+ * If detected, we try to extract the user's query from the end. The skill
+ * content typically ends with a section like "## Notes" or similar, and the
+ * user's query follows with no heading prefix.
+ *
+ * Returns the cleaned prompt (user query only) or null if the entire message
+ * appears to be skill content with no user query.
+ */
+function stripSkillPreamble(text: string): string | null {
+  if (text.length < SKILL_PROMPT_MIN_LENGTH) return text;
+  if (!text.startsWith("# ")) return text;
+
+  // Check for instructional markdown patterns that indicate skill content
+  const hasMultipleSections = (text.match(/^#{1,3} /gm) || []).length >= 3;
+  const hasCodeBlocks = text.includes("```");
+  const hasTables = text.includes("| ") && text.includes("|---|");
+
+  // Must have at least 2 of these 3 structural indicators
+  const structuralIndicators = [hasMultipleSections, hasCodeBlocks, hasTables].filter(Boolean).length;
+  if (structuralIndicators < 2) return text;
+
+  // This looks like a skill prompt. Try to extract the user's actual query
+  // from the end. The user's query is typically the last paragraph after all
+  // the markdown sections.
+  //
+  // Strategy: Find the last markdown section header, then look for content
+  // after the section that doesn't look like skill instructions.
+  const lines = text.split("\n");
+
+  // Walk backwards from the end to find where the user's query starts.
+  // The user query is typically a short line at the end, separated from
+  // the skill content by a blank line or just appended directly.
+  let lastSectionEnd = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].startsWith("#") || lines[i].startsWith("```") || lines[i].startsWith("| ") || lines[i].startsWith("- ")) {
+      lastSectionEnd = i;
+      break;
+    }
+  }
+
+  if (lastSectionEnd >= 0 && lastSectionEnd < lines.length - 1) {
+    // Extract everything after the last structural line
+    const userQuery = lines
+      .slice(lastSectionEnd + 1)
+      .join("\n")
+      .trim();
+    if (userQuery.length > 0) {
+      return userQuery;
+    }
+  }
+
+  // No user query found after skill content — skip this prompt entirely
+  return null;
+}
 
 // ============================================================================
 // Worker HTTP Client
@@ -267,10 +344,27 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
     if (role === "user") {
       if (!messageText || sessionPromptSent.has(ocSessionId)) return;
       sessionPromptSent.add(ocSessionId);
+
+      // Strip skill preamble — when a skill is loaded, OpenCode prepends the
+      // entire SKILL.md content to the first user message.  We extract only
+      // the user's actual query.
+      const cleanedPrompt = stripSkillPreamble(messageText);
+      if (!cleanedPrompt) {
+        // Entire message was skill content with no user query — still init
+        // the session but with a marker so the worker knows it's skill-only
+        await workerPost("/api/sessions/init", {
+          contentSessionId,
+          project: _projectName,
+          prompt: "[skill invocation]",
+          platformSource: "opencode",
+        });
+        return;
+      }
+
       await workerPost("/api/sessions/init", {
         contentSessionId,
         project: _projectName,
-        prompt: messageText,
+        prompt: cleanedPrompt,
         platformSource: "opencode",
       });
       return;
