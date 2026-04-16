@@ -168,7 +168,7 @@ export class PaginationHelper {
         ss.created_at,
         ss.created_at_epoch
       FROM session_summaries ss
-      JOIN sdk_sessions s ON ss.memory_session_id = s.memory_session_id
+      LEFT JOIN sdk_sessions s ON ss.memory_session_id = s.memory_session_id
       LEFT JOIN sdk_sessions p ON s.content_session_id = p.memory_session_id
     `;
     const params: any[] = [];
