@@ -1632,6 +1632,12 @@ export class SessionStore {
       return existing.id;
     }
 
+    // Defense-in-depth: never create sessions for observer-session subprocesses.
+    if (project === OBSERVER_SESSIONS_PROJECT) {
+      logger.warn('DB', `Blocked creation of observer-session record: ${contentSessionId}`);
+      throw new Error(`Refusing to create session with project="${OBSERVER_SESSIONS_PROJECT}"`);
+    }
+
     // New session - insert fresh row
     // NOTE: memory_session_id starts as NULL. It is captured by SDKAgent from the first SDK
     // response and stored via ensureMemorySessionIdRegistered(). CRITICAL: memory_session_id
@@ -1648,8 +1654,52 @@ export class SessionStore {
     return row.id;
   }
 
+  /**
+   * Look up an existing session by contentSessionId. Returns null if not found.
+   *
+   * Use instead of createSDKSession when the caller should NOT create a new
+   * session (observation/summarize/status/complete endpoints).
+   */
+  lookupSessionDbId(contentSessionId: string): number | null {
+    const row = this.db.prepare(
+      'SELECT id FROM sdk_sessions WHERE content_session_id = ?'
+    ).get(contentSessionId) as { id: number } | undefined;
+    return row?.id ?? null;
+  }
 
+  /**
+   * Prune internal records that should never have been persisted:
+   * - Sessions with project='observer-sessions' (SDK agent subprocesses)
+   * - User prompts belonging to those sessions
+   * - Sessions with empty/null project (created by hooks arriving before session-init)
+   *
+   * Called once during worker startup. CASCADE deletes handle child rows
+   * in user_prompts and pending_messages.
+   */
+  pruneInternalRecords(): { sessions: number; prompts: number } {
+    // 1. Delete user_prompts for observer-sessions (FK may not cascade if ON DELETE CASCADE missing on older schemas)
+    const promptResult = this.db.prepare(`
+      DELETE FROM user_prompts
+      WHERE content_session_id IN (
+        SELECT content_session_id FROM sdk_sessions
+        WHERE project = ? OR project IS NULL OR project = ''
+      )
+    `).run(OBSERVER_SESSIONS_PROJECT);
+    const promptsDeleted = promptResult.changes;
 
+    // 2. Delete observer-session and empty-project sessions
+    const sessionResult = this.db.prepare(`
+      DELETE FROM sdk_sessions
+      WHERE project = ? OR project IS NULL OR project = ''
+    `).run(OBSERVER_SESSIONS_PROJECT);
+    const sessionsDeleted = sessionResult.changes;
+
+    if (sessionsDeleted > 0 || promptsDeleted > 0) {
+      logger.info('DB', `Startup pruning: removed ${sessionsDeleted} internal sessions, ${promptsDeleted} orphaned prompts`);
+    }
+
+    return { sessions: sessionsDeleted, prompts: promptsDeleted };
+  }
 
   /**
    * Save a user prompt

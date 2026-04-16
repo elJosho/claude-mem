@@ -560,8 +560,13 @@ export class SessionRoutes extends BaseRouteHandler {
     try {
       const store = this.dbManager.getSessionStore();
 
-      // Get or create session
-      const sessionDbId = store.createSDKSession(contentSessionId, project, '', undefined, platformSource);
+      // Look up existing session — observation hooks should never create sessions
+      const sessionDbId = store.lookupSessionDbId(contentSessionId);
+      if (sessionDbId === null) {
+        logger.debug('SESSION', 'Observation for unknown session, skipping', { contentSessionId, tool_name });
+        res.json({ status: 'skipped', reason: 'no_session' });
+        return;
+      }
       const promptNumber = store.getPromptNumberFromUserPrompts(contentSessionId);
 
       // Privacy check: skip if user prompt was entirely private
@@ -633,8 +638,13 @@ export class SessionRoutes extends BaseRouteHandler {
 
     const store = this.dbManager.getSessionStore();
 
-    // Get or create session
-    const sessionDbId = store.createSDKSession(contentSessionId, '', '', undefined, platformSource);
+    // Look up existing session — summarize hooks should never create sessions
+    const sessionDbId = store.lookupSessionDbId(contentSessionId);
+    if (sessionDbId === null) {
+      logger.debug('SESSION', 'Summarize for unknown session, skipping', { contentSessionId });
+      res.json({ status: 'skipped', reason: 'no_session' });
+      return;
+    }
     const promptNumber = store.getPromptNumberFromUserPrompts(contentSessionId);
 
     // Privacy check: skip if user prompt was entirely private
@@ -676,7 +686,11 @@ export class SessionRoutes extends BaseRouteHandler {
     }
 
     const store = this.dbManager.getSessionStore();
-    const sessionDbId = store.createSDKSession(contentSessionId, '', '');
+    const sessionDbId = store.lookupSessionDbId(contentSessionId);
+    if (sessionDbId === null) {
+      res.json({ status: 'not_found', queueLength: 0 });
+      return;
+    }
     const session = this.sessionManager.getSession(sessionDbId);
 
     if (!session) {
@@ -717,9 +731,13 @@ export class SessionRoutes extends BaseRouteHandler {
 
     const store = this.dbManager.getSessionStore();
 
-    // Look up sessionDbId from contentSessionId (createSDKSession is idempotent)
-    // Pass empty strings - we only need the ID lookup, not to create a new session
-    const sessionDbId = store.createSDKSession(contentSessionId, '', '', undefined, platformSource);
+    // Look up existing session — complete should never create sessions
+    const sessionDbId = store.lookupSessionDbId(contentSessionId);
+    if (sessionDbId === null) {
+      logger.debug('SESSION', 'Complete for unknown session, skipping', { contentSessionId });
+      res.json({ status: 'not_found' });
+      return;
+    }
 
     // Check if session is in the active sessions map
     const activeSession = this.sessionManager.getSession(sessionDbId);
