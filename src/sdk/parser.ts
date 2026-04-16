@@ -120,10 +120,13 @@ export function parseSummary(text: string, sessionId?: number): ParsedSummary | 
   const summaryMatch = summaryRegex.exec(text);
 
   if (!summaryMatch) {
-    // Log when the response contains <observation> instead of <summary>
-    // to help diagnose prompt conditioning issues (see #1312)
+    // When the model responds with <observation> tags instead of <summary>,
+    // synthesize a summary from the observation content. This happens consistently
+    // because the model is heavily conditioned to produce <observation> tags from
+    // the init prompt and many observation turns before the summary request.
     if (/<observation>/.test(text)) {
-      logger.warn('PARSER', 'Summary response contained <observation> tags instead of <summary> — prompt conditioning may need strengthening', { sessionId });
+      logger.info('PARSER', 'Summary response contained <observation> tags — synthesizing summary from observations', { sessionId });
+      return synthesizeSummaryFromObservations(text, sessionId);
     }
     return null;
   }
@@ -171,6 +174,65 @@ export function parseSummary(text: string, sessionId?: number): ParsedSummary | 
     next_steps,
     notes
   };
+}
+
+/**
+ * Synthesize a ParsedSummary from <observation> tags when the model fails
+ * to produce proper <summary> tags in a summary response.
+ *
+ * Maps observation fields to summary fields:
+ * - title/subtitle → request (what was asked)
+ * - narrative → investigated + learned (what happened)
+ * - facts → completed (concrete outcomes)
+ * - concepts → notes (additional context)
+ */
+function synthesizeSummaryFromObservations(text: string, sessionId?: number): ParsedSummary | null {
+  const observationRegex = /<observation>([\s\S]*?)<\/observation>/g;
+  const titles: string[] = [];
+  const narratives: string[] = [];
+  const allFacts: string[] = [];
+  const allConcepts: string[] = [];
+
+  let match;
+  while ((match = observationRegex.exec(text)) !== null) {
+    const obsContent = match[1];
+    const title = extractField(obsContent, 'title');
+    const subtitle = extractField(obsContent, 'subtitle');
+    const narrative = extractField(obsContent, 'narrative');
+    const facts = extractArrayElements(obsContent, 'facts', 'fact');
+    const concepts = extractArrayElements(obsContent, 'concepts', 'concept');
+
+    if (title) titles.push(title);
+    if (subtitle) titles.push(subtitle);
+    if (narrative) narratives.push(narrative);
+    allFacts.push(...facts);
+    allConcepts.push(...concepts);
+  }
+
+  // Must have at least some content to synthesize
+  if (titles.length === 0 && narratives.length === 0 && allFacts.length === 0) {
+    logger.warn('PARSER', 'Cannot synthesize summary — observations have no usable content', { sessionId });
+    return null;
+  }
+
+  const summary: ParsedSummary = {
+    request: titles.length > 0 ? titles[0] : null,
+    investigated: narratives.length > 0 ? narratives.join('\n\n') : null,
+    learned: narratives.length > 1 ? narratives.slice(1).join('\n\n') : (allConcepts.length > 0 ? allConcepts.join('; ') : null),
+    completed: allFacts.length > 0 ? allFacts.join('\n') : null,
+    next_steps: null,
+    notes: titles.length > 1 ? titles.slice(1).join('; ') : null
+  };
+
+  logger.info('PARSER', 'Synthesized summary from observations', {
+    sessionId,
+    observationCount: titles.length,
+    hasRequest: !!summary.request,
+    hasInvestigated: !!summary.investigated,
+    hasCompleted: !!summary.completed
+  });
+
+  return summary;
 }
 
 /**
