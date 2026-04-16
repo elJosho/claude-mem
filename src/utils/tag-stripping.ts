@@ -10,6 +10,8 @@
  *    (should not be persisted to memory)
  * 4. <system-reminder> - Claude Code-injected system reminders
  *    (CLAUDE.md contents, deferred tool lists, etc. — should not be persisted)
+ * 5. <skill_content> - OpenCode skill instructions injected into prompts
+ *    (should not be persisted to memory)
  *
  * EDGE PROCESSING PATTERN: Filter at hook layer before sending to worker/storage.
  * This keeps the worker service simple and follows one-way data stream.
@@ -41,7 +43,8 @@ function countTags(content: string): number {
   const systemInstructionHyphenCount = (content.match(/<system-instruction>/g) || []).length;
 const persistedOutputCount = (content.match(/<persisted-output>/g) || []).length;
   const systemReminderCount = (content.match(/<system-reminder>/g) || []).length;
-  return privateCount + contextCount + systemInstructionCount + systemInstructionHyphenCount + persistedOutputCount + systemReminderCount;
+  const skillContentCount = (content.match(/<skill_content[\s>]/g) || []).length;
+  return privateCount + contextCount + systemInstructionCount + systemInstructionHyphenCount + persistedOutputCount + systemReminderCount + skillContentCount;
 }
 
 /**
@@ -67,6 +70,7 @@ function stripTagsInternal(content: string): string {
     .replace(/<system-instruction>[\s\S]*?<\/system-instruction>/g, '')
 .replace(/<persisted-output>[\s\S]*?<\/persisted-output>/g, '')
     .replace(SYSTEM_REMINDER_REGEX, '')
+    .replace(/<skill_content[\s\S]*?<\/skill_content>/g, '')
     .trim();
 }
 
