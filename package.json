@@ -42,6 +42,7 @@
   },
   "files": [
     "dist",
+    "plugin",
     "plugin/.claude-plugin",
     "plugin/CLAUDE.md",
     "plugin/package.json",
