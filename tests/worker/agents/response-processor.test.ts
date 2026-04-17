@@ -281,7 +281,7 @@ describe('ResponseProcessor', () => {
       expect(summary.learned).toBe('React Hook Form works well');
     });
 
-    it('should handle response without summary', async () => {
+    it('should synthesize summary from observation-only XML when no <summary> block', async () => {
       const session = createMockSession();
       const responseText = `
         <observation>
@@ -294,10 +294,9 @@ describe('ResponseProcessor', () => {
         </observation>
       `;
 
-      // Mock to return result without summary
       mockStoreObservations = mock(() => ({
         observationIds: [1],
-        summaryId: null,
+        summaryId: 99,
         createdAtEpoch: 1700000000000,
       }));
       (mockDbManager.getSessionStore as any) = () => ({
@@ -318,7 +317,8 @@ describe('ResponseProcessor', () => {
       );
 
       const [, , , summary] = mockStoreObservations.mock.calls[0];
-      expect(summary).toBeNull();
+      expect(summary).not.toBeNull();
+      expect(summary?.request).toBe('Test');
     });
   });
 

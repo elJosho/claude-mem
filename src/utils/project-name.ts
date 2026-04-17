@@ -1,5 +1,6 @@
 import { homedir } from 'os'
 import path from 'path';
+import { OBSERVER_SESSIONS_DIR, OBSERVER_SESSIONS_PROJECT } from '../shared/paths.js';
 import { logger } from './logger.js';
 import { detectWorktree } from './worktree.js';
 
@@ -32,6 +33,22 @@ export function getProjectName(cwd: string | null | undefined): string {
 
   // Extract basename (handles trailing slashes automatically)
   const basename = path.basename(expanded);
+
+  // Memory-agent SDK runs with cwd under ~/.claude-mem/observer-sessions — that must never
+  // become the stored "project" name (hooks may forward that cwd on some platforms).
+  const expandedResolved = path.resolve(expanded);
+  const observerResolved = path.resolve(OBSERVER_SESSIONS_DIR);
+  if (
+    expandedResolved === observerResolved ||
+    expandedResolved.startsWith(observerResolved + path.sep)
+  ) {
+    logger.debug('PROJECT_NAME', 'Observer sandbox cwd — using unknown-project', { cwd: expanded });
+    return 'unknown-project';
+  }
+  if (basename === OBSERVER_SESSIONS_PROJECT) {
+    logger.debug('PROJECT_NAME', 'Reserved basename observer-sessions — using unknown-project', { cwd: expanded });
+    return 'unknown-project';
+  }
 
   // Edge case: Drive roots on Windows (C:\, J:\) or Unix root (/)
   // path.basename('C:\') returns '' (empty string)

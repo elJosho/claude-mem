@@ -12,12 +12,16 @@
  */
 
 import { logger } from '../../../utils/logger.js';
+import {
+  sanitizeObservationInputForStorage,
+  sanitizeSummaryInputForStorage
+} from '../../../utils/tag-stripping.js';
 import { parseObservations, parseSummary, type ParsedObservation, type ParsedSummary } from '../../../sdk/parser.js';
 import { updateCursorContextForProject } from '../../integrations/CursorHooksInstaller.js';
 import { updateFolderClaudeMdFiles } from '../../../utils/claude-md-utils.js';
 import { getWorkerPort } from '../../../shared/worker-utils.js';
 import { SettingsDefaultsManager } from '../../../shared/SettingsDefaultsManager.js';
-import { USER_SETTINGS_PATH } from '../../../shared/paths.js';
+import { USER_SETTINGS_PATH, coerceStorageProject } from '../../../shared/paths.js';
 import type { ActiveSession } from '../../worker-types.js';
 import type { DatabaseManager } from '../DatabaseManager.js';
 import type { SessionManager } from '../SessionManager.js';
@@ -65,8 +69,8 @@ export async function processAgentResponse(
     session.conversationHistory.push({ role: 'assistant', content: text });
   }
 
-  // Parse observations and summary
-  const observations = parseObservations(text, session.contentSessionId);
+  // Parse observations and summary; strip memory/control tags before storage sync and SSE
+  const observations = parseObservations(text, session.contentSessionId).map(sanitizeObservationInputForStorage);
   const summary = parseSummary(text, session.sessionDbId);
 
   if (
@@ -120,6 +124,9 @@ export async function processAgentResponse(
   // for each new generator, ensuring clean isolation.
   sessionStore.ensureMemorySessionIdRegistered(session.sessionDbId, session.memorySessionId);
 
+  // Never persist reserved internal project label (in-memory session may predate cwd fixes)
+  const storageProject = coerceStorageProject(session.project);
+
   // Log pre-storage with session ID chain for verification
   logger.info('DB', `STORING | sessionDbId=${session.sessionDbId} | memorySessionId=${session.memorySessionId} | obsCount=${observations.length} | hasSummary=${!!summaryForStore}`, {
     sessionId: session.sessionDbId,
@@ -130,7 +137,7 @@ export async function processAgentResponse(
   // Messages are already deleted from queue on claim, so no completion tracking needed
   const result = sessionStore.storeObservations(
     session.memorySessionId,
-    session.project,
+    storageProject,
     observations,
     summaryForStore,
     session.lastPromptNumber,
@@ -162,6 +169,7 @@ export async function processAgentResponse(
     observations,
     result,
     session,
+    storageProject,
     dbManager,
     worker,
     discoveryTokens,
@@ -171,10 +179,10 @@ export async function processAgentResponse(
 
   // Sync and broadcast summary if present
   await syncAndBroadcastSummary(
-    summary,
     summaryForStore,
     result,
     session,
+    storageProject,
     dbManager,
     worker,
     discoveryTokens,
@@ -198,14 +206,14 @@ function normalizeSummaryForStorage(summary: ParsedSummary | null): {
 } | null {
   if (!summary) return null;
 
-  return {
+  return sanitizeSummaryInputForStorage({
     request: summary.request || '',
     investigated: summary.investigated || '',
     learned: summary.learned || '',
     completed: summary.completed || '',
     next_steps: summary.next_steps || '',
     notes: summary.notes
-  };
+  });
 }
 
 /**
@@ -215,6 +223,7 @@ async function syncAndBroadcastObservations(
   observations: ParsedObservation[],
   result: StorageResult,
   session: ActiveSession,
+  storageProject: string,
   dbManager: DatabaseManager,
   worker: WorkerRef | undefined,
   discoveryTokens: number,
@@ -230,7 +239,7 @@ async function syncAndBroadcastObservations(
     dbManager.getChromaSync()?.syncObservation(
       obsId,
       session.contentSessionId,
-      session.project,
+      storageProject,
       obs,
       session.lastPromptNumber,
       result.createdAtEpoch,
@@ -267,7 +276,7 @@ async function syncAndBroadcastObservations(
       concepts: JSON.stringify(obs.concepts || []),
       files_read: JSON.stringify(obs.files_read || []),
       files_modified: JSON.stringify(obs.files_modified || []),
-      project: session.project,
+      project: storageProject,
       prompt_number: session.lastPromptNumber,
       created_at_epoch: result.createdAtEpoch
     });
@@ -291,11 +300,11 @@ async function syncAndBroadcastObservations(
     if (allFilePaths.length > 0) {
       updateFolderClaudeMdFiles(
         allFilePaths,
-        session.project,
+        storageProject,
         getWorkerPort(),
         projectRoot
       ).catch(error => {
-        logger.warn('FOLDER_INDEX', 'CLAUDE.md update failed (non-critical)', { project: session.project }, error as Error);
+        logger.warn('FOLDER_INDEX', 'CLAUDE.md update failed (non-critical)', { project: storageProject }, error as Error);
       });
     }
   }
@@ -305,10 +314,10 @@ async function syncAndBroadcastObservations(
  * Sync summary to Chroma and broadcast to SSE clients
  */
 async function syncAndBroadcastSummary(
-  summary: ParsedSummary | null,
   summaryForStore: { request: string; investigated: string; learned: string; completed: string; next_steps: string; notes: string | null } | null,
   result: StorageResult,
   session: ActiveSession,
+  storageProject: string,
   dbManager: DatabaseManager,
   worker: WorkerRef | undefined,
   discoveryTokens: number,
@@ -324,7 +333,7 @@ async function syncAndBroadcastSummary(
   dbManager.getChromaSync()?.syncSummary(
     result.summaryId,
     session.contentSessionId,
-    session.project,
+    storageProject,
     summaryForStore,
     session.lastPromptNumber,
     result.createdAtEpoch,
@@ -348,19 +357,19 @@ async function syncAndBroadcastSummary(
     id: result.summaryId,
     session_id: session.contentSessionId,
     platform_source: session.platformSource,
-    request: summary!.request,
-    investigated: summary!.investigated,
-    learned: summary!.learned,
-    completed: summary!.completed,
-    next_steps: summary!.next_steps,
-    notes: summary!.notes,
-    project: session.project,
+    request: summaryForStore.request,
+    investigated: summaryForStore.investigated,
+    learned: summaryForStore.learned,
+    completed: summaryForStore.completed,
+    next_steps: summaryForStore.next_steps,
+    notes: summaryForStore.notes,
+    project: storageProject,
     prompt_number: session.lastPromptNumber,
     created_at_epoch: result.createdAtEpoch
   });
 
   // Update Cursor context file for registered projects (fire-and-forget)
-  updateCursorContextForProject(session.project, getWorkerPort()).catch(error => {
-    logger.warn('CURSOR', 'Context update failed (non-critical)', { project: session.project }, error as Error);
+  updateCursorContextForProject(storageProject, getWorkerPort()).catch(error => {
+    logger.warn('CURSOR', 'Context update failed (non-critical)', { project: storageProject }, error as Error);
   });
 }

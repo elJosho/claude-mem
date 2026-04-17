@@ -15,6 +15,7 @@
 import { ChromaMcpManager } from './ChromaMcpManager.js';
 import { ParsedObservation, ParsedSummary } from '../../sdk/parser.js';
 import { SessionStore } from '../sqlite/SessionStore.js';
+import { OBSERVER_SESSIONS_PROJECT } from '../../shared/paths.js';
 import { logger } from '../../utils/logger.js';
 import { parseFileList } from '../sqlite/observations/files.js';
 
@@ -811,8 +812,9 @@ export class ChromaSync {
     const sync = new ChromaSync('claude-mem');
     try {
       const projects = db.db.prepare(
-        'SELECT DISTINCT project FROM observations WHERE project IS NOT NULL AND project != ?'
-      ).all('') as { project: string }[];
+        `SELECT DISTINCT project FROM observations
+         WHERE project IS NOT NULL AND project != ? AND project != ?`
+      ).all('', OBSERVER_SESSIONS_PROJECT) as { project: string }[];
 
       logger.info('CHROMA_SYNC', `Backfill check for ${projects.length} projects`);
 

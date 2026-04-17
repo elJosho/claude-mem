@@ -6,7 +6,7 @@
 import type { Database } from 'bun:sqlite';
 import { logger } from '../../../utils/logger.js';
 import { DEFAULT_PLATFORM_SOURCE, normalizePlatformSource } from '../../../shared/platform-source.js';
-import { OBSERVER_SESSIONS_PROJECT } from '../../../shared/paths.js';
+import { coerceStorageProject } from '../../../shared/paths.js';
 
 function resolveCreateSessionArgs(
   customTitle?: string,
@@ -49,11 +49,12 @@ export function createSDKSession(
 
   if (existing) {
     // Backfill project if session was created by another hook with empty project
-    if (project) {
+    const safeProject = coerceStorageProject(project);
+    if (safeProject) {
       db.prepare(`
         UPDATE sdk_sessions SET project = ?
         WHERE content_session_id = ? AND (project IS NULL OR project = '')
-      `).run(project, contentSessionId);
+      `).run(safeProject, contentSessionId);
     }
     // Backfill custom_title if provided and not yet set
     if (resolved.customTitle) {
@@ -83,13 +84,8 @@ export function createSDKSession(
     return existing.id;
   }
 
-  // Defense-in-depth: never create sessions for observer-session subprocesses.
-  // The hook-level guard in hook-command.ts is the primary filter; this catches
-  // any direct API calls that slip through.
-  if (project === OBSERVER_SESSIONS_PROJECT) {
-    logger.warn('DB', `Blocked creation of observer-session record: ${contentSessionId}`);
-    throw new Error(`Refusing to create session with project="${OBSERVER_SESSIONS_PROJECT}"`);
-  }
+  // Coerce sandbox / reserved cwd label so we never INSERT project='observer-sessions'
+  const insertProject = coerceStorageProject(project);
 
   // New session - insert fresh row
   // NOTE: memory_session_id starts as NULL. It is captured by SDKAgent from the first SDK
@@ -99,7 +95,7 @@ export function createSDKSession(
     INSERT INTO sdk_sessions
     (content_session_id, memory_session_id, project, platform_source, user_prompt, custom_title, started_at, started_at_epoch, status)
     VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'active')
-  `).run(contentSessionId, project, normalizedPlatformSource, userPrompt, resolved.customTitle || null, now.toISOString(), nowEpoch);
+  `).run(contentSessionId, insertProject, normalizedPlatformSource, userPrompt, resolved.customTitle || null, now.toISOString(), nowEpoch);
 
   // Return new ID
   const row = db.prepare('SELECT id FROM sdk_sessions WHERE content_session_id = ?')

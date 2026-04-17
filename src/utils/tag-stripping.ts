@@ -93,3 +93,63 @@ export function stripMemoryTagsFromJson(content: string): string {
 export function stripMemoryTagsFromPrompt(content: string): string {
   return stripTagsInternal(content);
 }
+
+/** Nullable string fields: strip tags; empty after strip → null */
+function stripNullablePromptField(value: string | null): string | null {
+  if (value === null) return null;
+  const stripped = stripMemoryTagsFromPrompt(value);
+  return stripped === '' ? null : stripped;
+}
+
+/**
+ * Strip memory/control tags from observation fields before SQLite/Chroma/SSE.
+ * Used at storage boundaries so UI and search stay free of injected XML noise.
+ */
+export function sanitizeObservationInputForStorage<
+  T extends {
+    type: string;
+    title: string | null;
+    subtitle: string | null;
+    facts: string[];
+    narrative: string | null;
+    concepts: string[];
+    files_read: string[];
+    files_modified: string[];
+  }
+>(obs: T): T {
+  return {
+    ...obs,
+    type: obs.type,
+    title: stripNullablePromptField(obs.title),
+    subtitle: stripNullablePromptField(obs.subtitle),
+    narrative: stripNullablePromptField(obs.narrative),
+    facts: obs.facts.map((f) => stripMemoryTagsFromPrompt(f)).filter((f) => f.length > 0),
+    concepts: obs.concepts.map((c) => stripMemoryTagsFromPrompt(c)).filter((c) => c.length > 0),
+    files_read: obs.files_read.map((p) => stripMemoryTagsFromPrompt(p)),
+    files_modified: obs.files_modified.map((p) => stripMemoryTagsFromPrompt(p)),
+  };
+}
+
+/**
+ * Strip memory/control tags from session summary fields before persistence.
+ */
+export function sanitizeSummaryInputForStorage<
+  T extends {
+    request: string;
+    investigated: string;
+    learned: string;
+    completed: string;
+    next_steps: string;
+    notes: string | null;
+  }
+>(summary: T): T {
+  return {
+    ...summary,
+    request: stripMemoryTagsFromPrompt(summary.request),
+    investigated: stripMemoryTagsFromPrompt(summary.investigated),
+    learned: stripMemoryTagsFromPrompt(summary.learned),
+    completed: stripMemoryTagsFromPrompt(summary.completed),
+    next_steps: stripMemoryTagsFromPrompt(summary.next_steps),
+    notes: stripNullablePromptField(summary.notes),
+  };
+}

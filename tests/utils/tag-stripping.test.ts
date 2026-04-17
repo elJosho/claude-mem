@@ -10,7 +10,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
-import { stripMemoryTagsFromPrompt, stripMemoryTagsFromJson } from '../../src/utils/tag-stripping.js';
+import {
+  stripMemoryTagsFromPrompt,
+  stripMemoryTagsFromJson,
+  sanitizeObservationInputForStorage,
+  sanitizeSummaryInputForStorage
+} from '../../src/utils/tag-stripping.js';
 import { logger } from '../../src/utils/logger.js';
 
 // Suppress logger output during tests
@@ -408,6 +413,56 @@ after`;
       const shouldSkip = !cleanedPrompt || cleanedPrompt.trim() === '';
       expect(shouldSkip).toBe(false);
       expect(cleanedPrompt.trim()).toBe('Please help me with my code');
+    });
+  });
+
+  describe('sanitizeObservationInputForStorage', () => {
+    it('strips tags from title, subtitle, narrative, facts, and concepts', () => {
+      const obs = sanitizeObservationInputForStorage({
+        type: 'discovery',
+        title: 'T <system-reminder>x</system-reminder>',
+        subtitle: '<private>s</private> sub',
+        narrative: '<claude-mem-context>n</claude-mem-context> body',
+        facts: ['a <private>x</private>'],
+        concepts: ['c'],
+        files_read: ['/p/a.ts'],
+        files_modified: []
+      });
+      expect(obs.title).toBe('T');
+      expect(obs.subtitle).toBe('sub');
+      expect(obs.narrative).toBe('body');
+      expect(obs.facts).toEqual(['a']);
+      expect(obs.concepts).toEqual(['c']);
+      expect(obs.files_read).toEqual(['/p/a.ts']);
+    });
+
+    it('maps empty narrative after strip to null', () => {
+      const obs = sanitizeObservationInputForStorage({
+        type: 'discovery',
+        title: null,
+        subtitle: null,
+        narrative: '<private>only</private>',
+        facts: [],
+        concepts: [],
+        files_read: [],
+        files_modified: []
+      });
+      expect(obs.narrative).toBeNull();
+    });
+  });
+
+  describe('sanitizeSummaryInputForStorage', () => {
+    it('strips tags from all summary fields', () => {
+      const s = sanitizeSummaryInputForStorage({
+        request: '<system-reminder>r</system-reminder> ok',
+        investigated: 'i',
+        learned: 'l',
+        completed: 'c',
+        next_steps: 'n',
+        notes: '<private>x</private> note'
+      });
+      expect(s.request).toBe('ok');
+      expect(s.notes).toBe('note');
     });
   });
 });

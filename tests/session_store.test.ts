@@ -43,7 +43,7 @@ describe('SessionStore', () => {
     expect(store.getPromptNumberFromUserPrompts(claudeId)).toBe(2);
   });
 
-  it('saveNextUserPromptAtomic skips duplicate same-text prompts within 2s (duplicate Cursor hooks)', () => {
+  it('saveNextUserPromptAtomic skips duplicate same-text prompts within window (duplicate Cursor hooks)', () => {
     const sid = 'cursor-dup-session';
     store.createSDKSession(sid, 'p', 'x');
     const text = 'hello twice';
@@ -58,6 +58,19 @@ describe('SessionStore', () => {
     expect(second.id).toBe(first.id);
 
     expect(store.getPromptNumberFromUserPrompts(sid)).toBe(1);
+  });
+
+  it('saveNextUserPromptAtomic dedupes when only leading/trailing whitespace or CRLF differs', () => {
+    const sid = 'cursor-dup-ws';
+    store.createSDKSession(sid, 'p', 'x');
+
+    const first = store.saveNextUserPromptAtomic(sid, '  hello\r\n');
+    expect(first.duplicateSkipped).toBeFalsy();
+
+    const second = store.saveNextUserPromptAtomic(sid, '\nhello  ');
+    expect(second.duplicateSkipped).toBe(true);
+    expect(store.getPromptNumberFromUserPrompts(sid)).toBe(1);
+    expect(store.getUserPrompt(sid, 1)).toBe('hello');
   });
 
   it('should store observation with timestamp override', () => {

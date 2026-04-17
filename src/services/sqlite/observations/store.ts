@@ -6,6 +6,7 @@
 import { createHash } from 'crypto';
 import { Database } from 'bun:sqlite';
 import { logger } from '../../../utils/logger.js';
+import { sanitizeObservationInputForStorage } from '../../../utils/tag-stripping.js';
 import { getCurrentProjectName } from '../../../shared/paths.js';
 import type { ObservationInput, StoreObservationResult } from './types.js';
 
@@ -57,6 +58,8 @@ export function storeObservation(
   discoveryTokens: number = 0,
   overrideTimestampEpoch?: number
 ): StoreObservationResult {
+  const sanitized = sanitizeObservationInputForStorage(observation);
+
   // Use override timestamp if provided (for processing backlog messages with original timestamps)
   const timestampEpoch = overrideTimestampEpoch ?? Date.now();
   const timestampIso = new Date(timestampEpoch).toISOString();
@@ -65,7 +68,7 @@ export function storeObservation(
   const resolvedProject = project || getCurrentProjectName();
 
   // Content-hash deduplication
-  const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
+  const contentHash = computeObservationContentHash(memorySessionId, sanitized.title, sanitized.narrative);
   const existing = findDuplicateObservation(db, contentHash, timestampEpoch);
   if (existing) {
     logger.debug('DEDUP', `Skipped duplicate observation | contentHash=${contentHash} | existingId=${existing.id}`);
@@ -82,14 +85,14 @@ export function storeObservation(
   const result = stmt.run(
     memorySessionId,
     resolvedProject,
-    observation.type,
-    observation.title,
-    observation.subtitle,
-    JSON.stringify(observation.facts),
-    observation.narrative,
-    JSON.stringify(observation.concepts),
-    JSON.stringify(observation.files_read),
-    JSON.stringify(observation.files_modified),
+    sanitized.type,
+    sanitized.title,
+    sanitized.subtitle,
+    JSON.stringify(sanitized.facts),
+    sanitized.narrative,
+    JSON.stringify(sanitized.concepts),
+    JSON.stringify(sanitized.files_read),
+    JSON.stringify(sanitized.files_modified),
     promptNumber || null,
     discoveryTokens,
     contentHash,

@@ -78,6 +78,17 @@ export const OBSERVER_SESSIONS_DIR = join(DATA_DIR, 'observer-sessions');
 // Used to filter internal memory-agent sessions from user-facing UI
 export const OBSERVER_SESSIONS_PROJECT = 'observer-sessions';
 
+/**
+ * Never persist the reserved internal project label on observations/summaries/Chroma.
+ * Used when session.project was mistakenly set from sandbox cwd basename.
+ */
+export function coerceStorageProject(project: string): string {
+  if (project === OBSERVER_SESSIONS_PROJECT) {
+    return 'unknown-project';
+  }
+  return project;
+}
+
 // Claude integration paths
 export const CLAUDE_SETTINGS_PATH = join(CLAUDE_CONFIG_DIR, 'settings.json');
 export const CLAUDE_COMMANDS_DIR = join(CLAUDE_CONFIG_DIR, 'commands');

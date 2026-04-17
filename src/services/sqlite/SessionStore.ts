@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
-import { DATA_DIR, DB_PATH, ensureDir, OBSERVER_SESSIONS_PROJECT } from '../../shared/paths.js';
+import { DATA_DIR, DB_PATH, ensureDir, OBSERVER_SESSIONS_PROJECT, coerceStorageProject } from '../../shared/paths.js';
 import { logger } from '../../utils/logger.js';
+import { sanitizeObservationInputForStorage, sanitizeSummaryInputForStorage } from '../../utils/tag-stripping.js';
 import {
   TableColumnInfo,
   IndexInfo,
@@ -25,6 +26,11 @@ function resolveCreateSessionArgs(
     customTitle,
     platformSource: platformSource ? normalizePlatformSource(platformSource) : undefined
   };
+}
+
+/** Trim and unify line endings so duplicate hook deliveries still dedupe. */
+function normalizeUserPromptTextForDedup(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
 }
 
 /**
@@ -1191,9 +1197,9 @@ export class SessionStore {
     let query = `
       SELECT DISTINCT project
       FROM sdk_sessions
-      WHERE project IS NOT NULL AND project != ''
+      WHERE project IS NOT NULL AND project != '' AND project != ?
     `;
-    const params: unknown[] = [];
+    const params: unknown[] = [OBSERVER_SESSIONS_PROJECT];
 
     if (normalizedPlatformSource) {
       query += ' AND COALESCE(platform_source, ?) = ?';
@@ -1598,11 +1604,12 @@ export class SessionStore {
 
     if (existing) {
       // Backfill project if session was created by another hook with empty project
-      if (project) {
+      const safeProject = coerceStorageProject(project);
+      if (safeProject) {
         this.db.prepare(`
           UPDATE sdk_sessions SET project = ?
           WHERE content_session_id = ? AND (project IS NULL OR project = '')
-        `).run(project, contentSessionId);
+        `).run(safeProject, contentSessionId);
       }
       // Backfill custom_title if provided and not yet set
       if (resolved.customTitle) {
@@ -1632,11 +1639,7 @@ export class SessionStore {
       return existing.id;
     }
 
-    // Defense-in-depth: never create sessions for observer-session subprocesses.
-    if (project === OBSERVER_SESSIONS_PROJECT) {
-      logger.warn('DB', `Blocked creation of observer-session record: ${contentSessionId}`);
-      throw new Error(`Refusing to create session with project="${OBSERVER_SESSIONS_PROJECT}"`);
-    }
+    const insertProject = coerceStorageProject(project);
 
     // New session - insert fresh row
     // NOTE: memory_session_id starts as NULL. It is captured by SDKAgent from the first SDK
@@ -1646,7 +1649,7 @@ export class SessionStore {
       INSERT INTO sdk_sessions
       (content_session_id, memory_session_id, project, platform_source, user_prompt, custom_title, started_at, started_at_epoch, status)
       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 'active')
-    `).run(contentSessionId, project, normalizedPlatformSource, userPrompt, resolved.customTitle || null, now.toISOString(), nowEpoch);
+    `).run(contentSessionId, insertProject, normalizedPlatformSource, userPrompt, resolved.customTitle || null, now.toISOString(), nowEpoch);
 
     // Return new ID
     const row = this.db.prepare('SELECT id FROM sdk_sessions WHERE content_session_id = ?')
@@ -1675,8 +1678,22 @@ export class SessionStore {
    *
    * Called once during worker startup. CASCADE deletes handle child rows
    * in user_prompts and pending_messages.
+   *
+   * Also deletes any observations/session_summaries rows whose denormalized
+   * project column is still observer-sessions (orphans or legacy DBs without FK).
    */
-  pruneInternalRecords(): { sessions: number; prompts: number } {
+  pruneInternalRecords(): { sessions: number; prompts: number; observations: number; summaries: number } {
+    // 0. Remove denormalized observer rows (belt-and-suspenders; may be empty if CASCADE worked)
+    const obsResult = this.db.prepare(`
+      DELETE FROM observations WHERE project = ?
+    `).run(OBSERVER_SESSIONS_PROJECT);
+    const observationsDeleted = obsResult.changes;
+
+    const sumResult = this.db.prepare(`
+      DELETE FROM session_summaries WHERE project = ?
+    `).run(OBSERVER_SESSIONS_PROJECT);
+    const summariesDeleted = sumResult.changes;
+
     // 1. Delete user_prompts for observer-sessions (FK may not cascade if ON DELETE CASCADE missing on older schemas)
     const promptResult = this.db.prepare(`
       DELETE FROM user_prompts
@@ -1694,11 +1711,24 @@ export class SessionStore {
     `).run(OBSERVER_SESSIONS_PROJECT);
     const sessionsDeleted = sessionResult.changes;
 
-    if (sessionsDeleted > 0 || promptsDeleted > 0) {
-      logger.info('DB', `Startup pruning: removed ${sessionsDeleted} internal sessions, ${promptsDeleted} orphaned prompts`);
+    if (
+      sessionsDeleted > 0 ||
+      promptsDeleted > 0 ||
+      observationsDeleted > 0 ||
+      summariesDeleted > 0
+    ) {
+      logger.info(
+        'DB',
+        `Startup pruning: removed ${sessionsDeleted} internal sessions, ${promptsDeleted} orphaned prompts, ${observationsDeleted} observations, ${summariesDeleted} summaries (observer/empty project)`
+      );
     }
 
-    return { sessions: sessionsDeleted, prompts: promptsDeleted };
+    return {
+      sessions: sessionsDeleted,
+      prompts: promptsDeleted,
+      observations: observationsDeleted,
+      summaries: summariesDeleted
+    };
   }
 
   /**
@@ -1724,6 +1754,10 @@ export class SessionStore {
    *
    * Also skips a second insert when the same prompt text arrives again within a few seconds
    * (duplicate hook invocation — e.g. Cursor firing beforeSubmit twice or user+project hooks).
+   *
+   * Dedup runs inside the same SQLite transaction as the insert so two concurrent requests
+   * cannot both pass the duplicate check before either commits. Prompt text is normalized
+   * (trim, CRLF→LF) so trivial formatting differences still match.
    */
   saveNextUserPromptAtomic(contentSessionId: string, promptText: string): {
     id: number;
@@ -1731,26 +1765,28 @@ export class SessionStore {
     created_at_epoch: number;
     duplicateSkipped?: boolean;
   } {
-    const DUPLICATE_PROMPT_WINDOW_MS = 2000;
-    const latest = this.getLatestUserPrompt(contentSessionId);
-    if (
-      latest &&
-      latest.prompt_text === promptText &&
-      Date.now() - latest.created_at_epoch < DUPLICATE_PROMPT_WINDOW_MS
-    ) {
-      logger.debug('DEDUP', 'Skipped duplicate user_prompt (same text within window)', {
-        contentSessionId,
-        promptNumber: latest.prompt_number
-      });
-      return {
-        id: latest.id,
-        promptNumber: latest.prompt_number,
-        created_at_epoch: latest.created_at_epoch,
-        duplicateSkipped: true
-      };
-    }
+    const DUPLICATE_PROMPT_WINDOW_MS = 8000;
+    const normalizedIncoming = normalizeUserPromptTextForDedup(promptText);
 
     const tx = this.db.transaction(() => {
+      const latest = this.getLatestUserPrompt(contentSessionId);
+      if (
+        latest &&
+        normalizeUserPromptTextForDedup(latest.prompt_text) === normalizedIncoming &&
+        Date.now() - latest.created_at_epoch < DUPLICATE_PROMPT_WINDOW_MS
+      ) {
+        logger.debug('DEDUP', 'Skipped duplicate user_prompt (same text within window)', {
+          contentSessionId,
+          promptNumber: latest.prompt_number
+        });
+        return {
+          id: latest.id,
+          promptNumber: latest.prompt_number,
+          created_at_epoch: latest.created_at_epoch,
+          duplicateSkipped: true as const
+        };
+      }
+
       const row = this.db.prepare(`
         SELECT COUNT(*) as c FROM user_prompts WHERE content_session_id = ?
       `).get(contentSessionId) as { c: number };
@@ -1765,7 +1801,7 @@ export class SessionStore {
       const result = stmt.run(
         contentSessionId,
         promptNumber,
-        promptText,
+        normalizedIncoming,
         now.toISOString(),
         nowEpoch
       );
@@ -1773,7 +1809,7 @@ export class SessionStore {
         id: Number(result.lastInsertRowid),
         promptNumber,
         created_at_epoch: nowEpoch,
-        duplicateSkipped: false
+        duplicateSkipped: false as const
       };
     });
     return tx();
@@ -1818,12 +1854,14 @@ export class SessionStore {
     overrideTimestampEpoch?: number,
     generatedByModel?: string
   ): { id: number; createdAtEpoch: number } {
+    const sanitized = sanitizeObservationInputForStorage(observation);
+
     // Use override timestamp if provided (for processing backlog messages with original timestamps)
     const timestampEpoch = overrideTimestampEpoch ?? Date.now();
     const timestampIso = new Date(timestampEpoch).toISOString();
 
     // Content-hash deduplication
-    const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
+    const contentHash = computeObservationContentHash(memorySessionId, sanitized.title, sanitized.narrative);
     const existing = findDuplicateObservation(this.db, contentHash, timestampEpoch);
     if (existing) {
       return { id: existing.id, createdAtEpoch: existing.created_at_epoch };
@@ -1840,14 +1878,14 @@ export class SessionStore {
     const result = stmt.run(
       memorySessionId,
       project,
-      observation.type,
-      observation.title,
-      observation.subtitle,
-      JSON.stringify(observation.facts),
-      observation.narrative,
-      JSON.stringify(observation.concepts),
-      JSON.stringify(observation.files_read),
-      JSON.stringify(observation.files_modified),
+      sanitized.type,
+      sanitized.title,
+      sanitized.subtitle,
+      JSON.stringify(sanitized.facts),
+      sanitized.narrative,
+      JSON.stringify(sanitized.concepts),
+      JSON.stringify(sanitized.files_read),
+      JSON.stringify(sanitized.files_modified),
       promptNumber || null,
       discoveryTokens,
       contentHash,
@@ -1881,6 +1919,8 @@ export class SessionStore {
     discoveryTokens: number = 0,
     overrideTimestampEpoch?: number
   ): { id: number; createdAtEpoch: number } {
+    const sanitized = sanitizeSummaryInputForStorage(summary);
+
     // Use override timestamp if provided (for processing backlog messages with original timestamps)
     const timestampEpoch = overrideTimestampEpoch ?? Date.now();
     const timestampIso = new Date(timestampEpoch).toISOString();
@@ -1895,12 +1935,12 @@ export class SessionStore {
     const result = stmt.run(
       memorySessionId,
       project,
-      summary.request,
-      summary.investigated,
-      summary.learned,
-      summary.completed,
-      summary.next_steps,
-      summary.notes,
+      sanitized.request,
+      sanitized.investigated,
+      sanitized.learned,
+      sanitized.completed,
+      sanitized.next_steps,
+      sanitized.notes,
       promptNumber || null,
       discoveryTokens,
       timestampIso,
@@ -1973,8 +2013,10 @@ export class SessionStore {
       `);
 
       for (const observation of observations) {
+        const sanitizedObs = sanitizeObservationInputForStorage(observation);
+
         // Content-hash deduplication (same logic as storeObservation singular)
-        const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
+        const contentHash = computeObservationContentHash(memorySessionId, sanitizedObs.title, sanitizedObs.narrative);
         const existing = findDuplicateObservation(this.db, contentHash, timestampEpoch);
         if (existing) {
           observationIds.push(existing.id);
@@ -1984,14 +2026,14 @@ export class SessionStore {
         const result = obsStmt.run(
           memorySessionId,
           project,
-          observation.type,
-          observation.title,
-          observation.subtitle,
-          JSON.stringify(observation.facts),
-          observation.narrative,
-          JSON.stringify(observation.concepts),
-          JSON.stringify(observation.files_read),
-          JSON.stringify(observation.files_modified),
+          sanitizedObs.type,
+          sanitizedObs.title,
+          sanitizedObs.subtitle,
+          JSON.stringify(sanitizedObs.facts),
+          sanitizedObs.narrative,
+          JSON.stringify(sanitizedObs.concepts),
+          JSON.stringify(sanitizedObs.files_read),
+          JSON.stringify(sanitizedObs.files_modified),
           promptNumber || null,
           discoveryTokens,
           contentHash,
@@ -2005,6 +2047,8 @@ export class SessionStore {
       // 2. Store summary if provided
       let summaryId: number | null = null;
       if (summary) {
+        const sanitizedSummary = sanitizeSummaryInputForStorage(summary);
+
         const summaryStmt = this.db.prepare(`
           INSERT INTO session_summaries
           (memory_session_id, project, request, investigated, learned, completed,
@@ -2015,12 +2059,12 @@ export class SessionStore {
         const result = summaryStmt.run(
           memorySessionId,
           project,
-          summary.request,
-          summary.investigated,
-          summary.learned,
-          summary.completed,
-          summary.next_steps,
-          summary.notes,
+          sanitizedSummary.request,
+          sanitizedSummary.investigated,
+          sanitizedSummary.learned,
+          sanitizedSummary.completed,
+          sanitizedSummary.next_steps,
+          sanitizedSummary.notes,
           promptNumber || null,
           discoveryTokens,
           timestampIso,
@@ -2105,8 +2149,10 @@ export class SessionStore {
       `);
 
       for (const observation of observations) {
+        const sanitizedObs = sanitizeObservationInputForStorage(observation);
+
         // Content-hash deduplication (same logic as storeObservation singular)
-        const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
+        const contentHash = computeObservationContentHash(memorySessionId, sanitizedObs.title, sanitizedObs.narrative);
         const existing = findDuplicateObservation(this.db, contentHash, timestampEpoch);
         if (existing) {
           observationIds.push(existing.id);
@@ -2116,14 +2162,14 @@ export class SessionStore {
         const result = obsStmt.run(
           memorySessionId,
           project,
-          observation.type,
-          observation.title,
-          observation.subtitle,
-          JSON.stringify(observation.facts),
-          observation.narrative,
-          JSON.stringify(observation.concepts),
-          JSON.stringify(observation.files_read),
-          JSON.stringify(observation.files_modified),
+          sanitizedObs.type,
+          sanitizedObs.title,
+          sanitizedObs.subtitle,
+          JSON.stringify(sanitizedObs.facts),
+          sanitizedObs.narrative,
+          JSON.stringify(sanitizedObs.concepts),
+          JSON.stringify(sanitizedObs.files_read),
+          JSON.stringify(sanitizedObs.files_modified),
           promptNumber || null,
           discoveryTokens,
           contentHash,
@@ -2137,6 +2183,8 @@ export class SessionStore {
       // 2. Store summary if provided
       let summaryId: number | undefined;
       if (summary) {
+        const sanitizedSummary = sanitizeSummaryInputForStorage(summary);
+
         const summaryStmt = this.db.prepare(`
           INSERT INTO session_summaries
           (memory_session_id, project, request, investigated, learned, completed,
@@ -2147,12 +2195,12 @@ export class SessionStore {
         const result = summaryStmt.run(
           memorySessionId,
           project,
-          summary.request,
-          summary.investigated,
-          summary.learned,
-          summary.completed,
-          summary.next_steps,
-          summary.notes,
+          sanitizedSummary.request,
+          sanitizedSummary.investigated,
+          sanitizedSummary.learned,
+          sanitizedSummary.completed,
+          sanitizedSummary.next_steps,
+          sanitizedSummary.notes,
           promptNumber || null,
           discoveryTokens,
           timestampIso,
@@ -2526,8 +2574,9 @@ export class SessionStore {
    * Manual sessions use a predictable ID format: "manual-{project}"
    */
   getOrCreateManualSession(project: string): string {
-    const memorySessionId = `manual-${project}`;
-    const contentSessionId = `manual-content-${project}`;
+    const safeProject = coerceStorageProject(project);
+    const memorySessionId = `manual-${safeProject}`;
+    const contentSessionId = `manual-content-${safeProject}`;
 
     const existing = this.db.prepare(
       'SELECT memory_session_id FROM sdk_sessions WHERE memory_session_id = ?'
@@ -2542,9 +2591,9 @@ export class SessionStore {
     this.db.prepare(`
       INSERT INTO sdk_sessions (memory_session_id, content_session_id, project, platform_source, started_at, started_at_epoch, status)
       VALUES (?, ?, ?, ?, ?, ?, 'active')
-    `).run(memorySessionId, contentSessionId, project, DEFAULT_PLATFORM_SOURCE, now.toISOString(), now.getTime());
+    `).run(memorySessionId, contentSessionId, safeProject, DEFAULT_PLATFORM_SOURCE, now.toISOString(), now.getTime());
 
-    logger.info('SESSION', 'Created manual session', { memorySessionId, project });
+    logger.info('SESSION', 'Created manual session', { memorySessionId, project: safeProject });
 
     return memorySessionId;
   }

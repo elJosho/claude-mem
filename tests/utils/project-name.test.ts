@@ -7,6 +7,8 @@
 
 import { describe, it, expect } from 'bun:test';
 import { homedir } from 'os';
+import { join } from 'path';
+import { OBSERVER_SESSIONS_DIR } from '../../src/shared/paths.js';
 import { getProjectName, getProjectContext } from '../../src/utils/project-name.js';
 
 describe('getProjectName', () => {
@@ -39,6 +41,11 @@ describe('getProjectName', () => {
 
     it('handles trailing slash', () => {
       expect(getProjectName('/home/user/my-project/')).toBe('my-project');
+    });
+
+    it('maps memory-agent sandbox dir to unknown-project (not observer-sessions)', () => {
+      expect(getProjectName(OBSERVER_SESSIONS_DIR)).toBe('unknown-project');
+      expect(getProjectName(join(OBSERVER_SESSIONS_DIR, '12.1.6'))).toBe('unknown-project');
     });
   });
 

@@ -9,6 +9,7 @@ import express, { Request, Response } from 'express';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { logger } from '../../../../utils/logger.js';
 import type { DatabaseManager } from '../../DatabaseManager.js';
+import { coerceStorageProject } from '../../../../shared/paths.js';
 
 export class MemoryRoutes extends BaseRouteHandler {
   constructor(
@@ -28,7 +29,7 @@ export class MemoryRoutes extends BaseRouteHandler {
    */
   private handleSaveMemory = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
     const { text, title, project } = req.body;
-    const targetProject = project || this.defaultProject;
+    const targetProject = coerceStorageProject(project || this.defaultProject);
 
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
       this.badRequest(res, 'text is required and must be non-empty');

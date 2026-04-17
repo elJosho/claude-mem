@@ -3,6 +3,7 @@
  */
 import type { Database } from 'bun:sqlite';
 import { logger } from '../../../utils/logger.js';
+import { sanitizeSummaryInputForStorage } from '../../../utils/tag-stripping.js';
 import type { SummaryInput, StoreSummaryResult } from './types.js';
 
 /**
@@ -26,6 +27,8 @@ export function storeSummary(
   discoveryTokens: number = 0,
   overrideTimestampEpoch?: number
 ): StoreSummaryResult {
+  const sanitized = sanitizeSummaryInputForStorage(summary);
+
   // Use override timestamp if provided (for processing backlog messages with original timestamps)
   const timestampEpoch = overrideTimestampEpoch ?? Date.now();
   const timestampIso = new Date(timestampEpoch).toISOString();
@@ -40,12 +43,12 @@ export function storeSummary(
   const result = stmt.run(
     memorySessionId,
     project,
-    summary.request,
-    summary.investigated,
-    summary.learned,
-    summary.completed,
-    summary.next_steps,
-    summary.notes,
+    sanitized.request,
+    sanitized.investigated,
+    sanitized.learned,
+    sanitized.completed,
+    sanitized.next_steps,
+    sanitized.notes,
     promptNumber || null,
     discoveryTokens,
     timestampIso,

@@ -11,6 +11,7 @@ import { logger } from '../../utils/logger.js';
 import type { ObservationInput } from './observations/types.js';
 import type { SummaryInput } from './summaries/types.js';
 import { computeObservationContentHash, findDuplicateObservation } from './observations/store.js';
+import { sanitizeObservationInputForStorage, sanitizeSummaryInputForStorage } from '../../utils/tag-stripping.js';
 
 /**
  * Result from storeObservations / storeObservationsAndMarkComplete transaction
@@ -73,7 +74,9 @@ export function storeObservationsAndMarkComplete(
     `);
 
     for (const observation of observations) {
-      const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
+      const sanitizedObs = sanitizeObservationInputForStorage(observation);
+
+      const contentHash = computeObservationContentHash(memorySessionId, sanitizedObs.title, sanitizedObs.narrative);
       const existing = findDuplicateObservation(db, contentHash, timestampEpoch);
       if (existing) {
         observationIds.push(existing.id);
@@ -83,14 +86,14 @@ export function storeObservationsAndMarkComplete(
       const result = obsStmt.run(
         memorySessionId,
         project,
-        observation.type,
-        observation.title,
-        observation.subtitle,
-        JSON.stringify(observation.facts),
-        observation.narrative,
-        JSON.stringify(observation.concepts),
-        JSON.stringify(observation.files_read),
-        JSON.stringify(observation.files_modified),
+        sanitizedObs.type,
+        sanitizedObs.title,
+        sanitizedObs.subtitle,
+        JSON.stringify(sanitizedObs.facts),
+        sanitizedObs.narrative,
+        JSON.stringify(sanitizedObs.concepts),
+        JSON.stringify(sanitizedObs.files_read),
+        JSON.stringify(sanitizedObs.files_modified),
         promptNumber || null,
         discoveryTokens,
         contentHash,
@@ -103,6 +106,8 @@ export function storeObservationsAndMarkComplete(
     // 2. Store summary if provided
     let summaryId: number | null = null;
     if (summary) {
+      const sanitizedSummary = sanitizeSummaryInputForStorage(summary);
+
       const summaryStmt = db.prepare(`
         INSERT INTO session_summaries
         (memory_session_id, project, request, investigated, learned, completed,
@@ -113,12 +118,12 @@ export function storeObservationsAndMarkComplete(
       const result = summaryStmt.run(
         memorySessionId,
         project,
-        summary.request,
-        summary.investigated,
-        summary.learned,
-        summary.completed,
-        summary.next_steps,
-        summary.notes,
+        sanitizedSummary.request,
+        sanitizedSummary.investigated,
+        sanitizedSummary.learned,
+        sanitizedSummary.completed,
+        sanitizedSummary.next_steps,
+        sanitizedSummary.notes,
         promptNumber || null,
         discoveryTokens,
         timestampIso,
@@ -192,7 +197,9 @@ export function storeObservations(
     `);
 
     for (const observation of observations) {
-      const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
+      const sanitizedObs = sanitizeObservationInputForStorage(observation);
+
+      const contentHash = computeObservationContentHash(memorySessionId, sanitizedObs.title, sanitizedObs.narrative);
       const existing = findDuplicateObservation(db, contentHash, timestampEpoch);
       if (existing) {
         observationIds.push(existing.id);
@@ -202,14 +209,14 @@ export function storeObservations(
       const result = obsStmt.run(
         memorySessionId,
         project,
-        observation.type,
-        observation.title,
-        observation.subtitle,
-        JSON.stringify(observation.facts),
-        observation.narrative,
-        JSON.stringify(observation.concepts),
-        JSON.stringify(observation.files_read),
-        JSON.stringify(observation.files_modified),
+        sanitizedObs.type,
+        sanitizedObs.title,
+        sanitizedObs.subtitle,
+        JSON.stringify(sanitizedObs.facts),
+        sanitizedObs.narrative,
+        JSON.stringify(sanitizedObs.concepts),
+        JSON.stringify(sanitizedObs.files_read),
+        JSON.stringify(sanitizedObs.files_modified),
         promptNumber || null,
         discoveryTokens,
         contentHash,
@@ -222,6 +229,8 @@ export function storeObservations(
     // 2. Store summary if provided
     let summaryId: number | null = null;
     if (summary) {
+      const sanitizedSummary = sanitizeSummaryInputForStorage(summary);
+
       const summaryStmt = db.prepare(`
         INSERT INTO session_summaries
         (memory_session_id, project, request, investigated, learned, completed,
@@ -232,12 +241,12 @@ export function storeObservations(
       const result = summaryStmt.run(
         memorySessionId,
         project,
-        summary.request,
-        summary.investigated,
-        summary.learned,
-        summary.completed,
-        summary.next_steps,
-        summary.notes,
+        sanitizedSummary.request,
+        sanitizedSummary.investigated,
+        sanitizedSummary.learned,
+        sanitizedSummary.completed,
+        sanitizedSummary.next_steps,
+        sanitizedSummary.notes,
         promptNumber || null,
         discoveryTokens,
         timestampIso,

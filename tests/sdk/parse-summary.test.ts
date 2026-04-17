@@ -8,8 +8,10 @@ import { describe, it, expect } from 'bun:test';
 import { parseSummary } from '../../src/sdk/parser.js';
 
 describe('parseSummary', () => {
-  it('returns null when no <summary> tag present', () => {
-    expect(parseSummary('<observation><title>foo</title></observation>')).toBeNull();
+  it('synthesizes summary from <observation> when no <summary> tag (parser fallback)', () => {
+    const s = parseSummary('<observation><title>foo</title></observation>');
+    expect(s).not.toBeNull();
+    expect(s?.request).toBe('foo');
   });
 
   it('returns null when <summary> has no sub-tags (false positive — fix for #1360)', () => {

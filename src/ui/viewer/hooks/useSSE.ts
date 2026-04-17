@@ -21,6 +21,7 @@ export function useSSE() {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
   const updateCatalogForItem = (project: string, platformSource: string) => {
+    if (project === OBSERVER_SESSIONS_PROJECT) return;
     setCatalog(prev => {
       const nextProjects = prev.projects.includes(project)
         ? prev.projects
