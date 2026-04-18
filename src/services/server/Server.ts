@@ -90,9 +90,16 @@ export class Server {
   }
 
   /**
-   * Start listening on the specified host and port
+   * Start listening on the specified host and port.
+   * Security: Only localhost binding is allowed since the API has no authentication.
    */
   async listen(port: number, host: string): Promise<void> {
+    const LOCALHOST_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+    if (!LOCALHOST_HOSTS.includes(host)) {
+      const safeHost = '127.0.0.1';
+      logger.warn('SYSTEM', `Blocked non-localhost bind "${host}" — forcing ${safeHost}. The API has no authentication and must not be exposed to the network.`);
+      host = safeHost;
+    }
     return new Promise<void>((resolve, reject) => {
       this.server = this.app.listen(port, host, () => {
         logger.info('SYSTEM', 'HTTP server started', { host, port, pid: process.pid });

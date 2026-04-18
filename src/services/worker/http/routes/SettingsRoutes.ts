@@ -287,13 +287,12 @@ export class SettingsRoutes extends BaseRouteHandler {
       }
     }
 
-    // Validate CLAUDE_MEM_WORKER_HOST (IP address or 0.0.0.0)
+    // Validate CLAUDE_MEM_WORKER_HOST (localhost only - non-localhost blocked for security)
     if (settings.CLAUDE_MEM_WORKER_HOST) {
       const host = settings.CLAUDE_MEM_WORKER_HOST;
-      // Allow localhost variants and valid IP patterns
-      const validHostPattern = /^(127\.0\.0\.1|0\.0\.0\.0|localhost|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/;
-      if (!validHostPattern.test(host)) {
-        return { valid: false, error: 'CLAUDE_MEM_WORKER_HOST must be a valid IP address (e.g., 127.0.0.1, 0.0.0.0)' };
+      const LOCALHOST_HOSTS = ['127.0.0.1', 'localhost', '::1'];
+      if (!LOCALHOST_HOSTS.includes(host)) {
+        return { valid: false, error: 'CLAUDE_MEM_WORKER_HOST must be localhost (127.0.0.1, localhost, or ::1). Non-localhost binding is blocked because the API has no authentication.' };
       }
     }
 
