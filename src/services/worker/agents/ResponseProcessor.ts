@@ -97,6 +97,8 @@ export async function processAgentResponse(
   // Observer may emit an empty or non-XML assistant turn before session_id is wired.
   // Do not throw — confirm the queue so the generator can continue (e.g. Cursor summarize).
   if (!hasPersistableWork) {
+    // Track that no summary was stored in this turn (Issue #1633)
+    session.lastSummaryStored = false;
     const pendingStore = sessionManager.getPendingMessageStore();
     for (const messageId of session.processingMessageIds) {
       pendingStore.confirmProcessed(messageId);

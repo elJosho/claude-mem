@@ -662,7 +662,8 @@ describe('ResponseProcessor', () => {
       const session = createMockSession({
         memorySessionId: null, // Missing memory session ID
       });
-      const responseText = '<observation><type>discovery</type></observation>';
+      // Include title so the ghost-observation filter doesn't drop it
+      const responseText = '<observation><type>discovery</type><title>Test Finding</title><narrative>Found something</narrative></observation>';
 
       await expect(
         processAgentResponse(

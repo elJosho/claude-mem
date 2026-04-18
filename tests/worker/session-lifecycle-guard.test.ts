@@ -17,6 +17,7 @@ import {
   getActiveProcesses,
   createPidCapturingSpawn,
 } from '../../src/services/worker/ProcessRegistry.js';
+import { getSupervisor } from '../../src/supervisor/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,9 +48,7 @@ function createMockProcess(overrides: { exitCode?: number | null; killed?: boole
 }
 
 function clearRegistry() {
-  for (const p of getActiveProcesses()) {
-    unregisterProcess(p.pid);
-  }
+  getSupervisor().getRegistry().clear();
 }
 
 // ---------------------------------------------------------------------------

@@ -77,8 +77,6 @@ export const summarizeHandler: EventHandler = {
       hasLastAssistantMessage: !!lastAssistantMessage
     });
 
-    const platformSource = normalizePlatformSource(input.platform);
-
     // 1. Queue summarize request — worker returns immediately with { status: 'queued' }
     const response = await workerHttpRequest('/api/sessions/summarize', {
       method: 'POST',
