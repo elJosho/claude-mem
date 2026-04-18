@@ -76,14 +76,19 @@ export interface Settings {
   CLAUDE_MEM_WORKER_HOST: string;
 
   // AI Provider Configuration
-  CLAUDE_MEM_PROVIDER?: string;  // 'claude' | 'gemini' | 'openrouter'
+  CLAUDE_MEM_PROVIDER?: string;  // 'claude' | 'gemini' | 'openrouter' | 'bedrock'
+  CLAUDE_MEM_CLAUDE_AUTH_METHOD?: string;  // 'cli' | 'api'
   CLAUDE_MEM_GEMINI_API_KEY?: string;
-  CLAUDE_MEM_GEMINI_MODEL?: string;  // 'gemini-2.5-flash-lite' | 'gemini-2.5-flash' | 'gemini-3-flash-preview'
-  CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED?: string;  // 'true' | 'false'
+  CLAUDE_MEM_GEMINI_MODEL?: string;
+  CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED?: string;
   CLAUDE_MEM_OPENROUTER_API_KEY?: string;
   CLAUDE_MEM_OPENROUTER_MODEL?: string;
   CLAUDE_MEM_OPENROUTER_SITE_URL?: string;
   CLAUDE_MEM_OPENROUTER_APP_NAME?: string;
+
+  // AWS Bedrock Configuration
+  CLAUDE_MEM_BEDROCK_REGION?: string;
+  CLAUDE_MEM_BEDROCK_MODEL?: string;
 
   // Token Economics Display
   CLAUDE_MEM_CONTEXT_SHOW_READ_TOKENS?: string;
@@ -99,6 +104,33 @@ export interface Settings {
   // Feature Toggles
   CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY?: string;
   CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE?: string;
+  CLAUDE_MEM_CONTEXT_SHOW_TERMINAL_OUTPUT?: string;
+  CLAUDE_MEM_FOLDER_CLAUDEMD_ENABLED?: string;
+  CLAUDE_MEM_FOLDER_USE_LOCAL_MD?: string;
+  CLAUDE_MEM_TRANSCRIPTS_ENABLED?: string;
+
+  // Semantic Context Injection
+  CLAUDE_MEM_SEMANTIC_INJECT?: string;
+  CLAUDE_MEM_SEMANTIC_INJECT_LIMIT?: string;
+
+  // Tier Routing
+  CLAUDE_MEM_TIER_ROUTING_ENABLED?: string;
+  CLAUDE_MEM_TIER_SIMPLE_MODEL?: string;
+  CLAUDE_MEM_TIER_SUMMARY_MODEL?: string;
+
+  // Chroma Vector Database
+  CLAUDE_MEM_CHROMA_ENABLED?: string;
+  CLAUDE_MEM_CHROMA_MODE?: string;
+  CLAUDE_MEM_CHROMA_HOST?: string;
+  CLAUDE_MEM_CHROMA_PORT?: string;
+
+  // System Configuration
+  CLAUDE_MEM_LOG_LEVEL?: string;
+  CLAUDE_MEM_MAX_CONCURRENT_AGENTS?: string;
+
+  // Exclusion Settings
+  CLAUDE_MEM_EXCLUDED_PROJECTS?: string;
+  CLAUDE_MEM_FOLDER_MD_EXCLUDE?: string;
 }
 
 export interface WorkerStats {
