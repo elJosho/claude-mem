@@ -23,7 +23,7 @@ import { PrivacyCheckValidator } from '../../validation/PrivacyCheckValidator.js
 import { SettingsDefaultsManager } from '../../../../shared/SettingsDefaultsManager.js';
 import { USER_SETTINGS_PATH } from '../../../../shared/paths.js';
 import { getProcessBySession, ensureProcessExit } from '../../ProcessRegistry.js';
-import { getProjectName } from '../../../../utils/project-name.js';
+import { getProjectContext } from '../../../../utils/project-name.js';
 import { normalizePlatformSource } from '../../../../shared/platform-source.js';
 
 export class SessionRoutes extends BaseRouteHandler {
@@ -107,10 +107,36 @@ export class SessionRoutes extends BaseRouteHandler {
    * The next generator will use the new provider with shared conversationHistory.
    */
   private static readonly STALE_GENERATOR_THRESHOLD_MS = 30_000; // 30 seconds (#1099)
+  private static readonly MAX_SESSION_WALL_CLOCK_MS = 4 * 60 * 60 * 1000; // 4 hours (#1590)
 
   private ensureGeneratorRunning(sessionDbId: number, source: string): void {
     const session = this.sessionManager.getSession(sessionDbId);
     if (!session) return;
+
+    // Wall-clock age guard: refuse to start new generators for sessions that have
+    // been alive too long to prevent runaway API costs (Issue #1590).
+    // Use the persisted started_at_epoch from the DB so the guard survives worker
+    // restarts (session.startTime is reset to Date.now() on every re-activation).
+    const dbSessionRecord = this.dbManager.getSessionStore().db
+      .prepare('SELECT started_at_epoch FROM sdk_sessions WHERE id = ? LIMIT 1')
+      .get(sessionDbId) as { started_at_epoch: number } | undefined;
+    const sessionOriginMs = dbSessionRecord?.started_at_epoch ?? session.startTime;
+    const sessionAgeMs = Date.now() - sessionOriginMs;
+    if (sessionAgeMs > SessionRoutes.MAX_SESSION_WALL_CLOCK_MS) {
+      logger.warn('SESSION', 'Session exceeded wall-clock age limit — aborting to prevent runaway spend', {
+        sessionId: sessionDbId,
+        ageHours: Math.round(sessionAgeMs / 3_600_000 * 10) / 10,
+        limitHours: SessionRoutes.MAX_SESSION_WALL_CLOCK_MS / 3_600_000,
+        source
+      });
+      if (!session.abortController.signal.aborted) {
+        session.abortController.abort();
+      }
+      const pendingStore = this.sessionManager.getPendingMessageStore();
+      pendingStore.markAllSessionMessagesAbandoned(sessionDbId);
+      this.sessionManager.removeSessionImmediate(sessionDbId);
+      return;
+    }
 
     // GUARD: Prevent duplicate spawns
     if (this.spawnInProgress.get(sessionDbId)) {
@@ -206,15 +232,37 @@ export class SessionRoutes extends BaseRouteHandler {
     session.currentProvider = provider;
     session.lastGeneratorActivity = Date.now();
 
+    // Capture the AbortController that belongs to THIS generator run.
+    // session.abortController may be replaced (e.g. by stale-recovery) before the
+    // .catch / .finally handlers run, so binding it here prevents a stale rejection
+    // from cancelling a brand-new controller (race condition guard).
+    const myController = session.abortController;
+
     session.generatorPromise = agent.startSession(session, this.workerService)
       .catch(error => {
         // Only log non-abort errors
-        if (session.abortController.signal.aborted) return;
-        
+        if (myController.signal.aborted) return;
+
+        const errorMsg = error instanceof Error ? error.message : String(error);
+
+        // Treat SIGTERM (exit code 143) as intentional termination, not a crash.
+        // When a subprocess is killed externally, abort the controller to prevent
+        // crash recovery from immediately respawning the process (Issue #1590).
+        // APPROVED OVERRIDE
+        if (errorMsg.includes('code 143') || errorMsg.includes('signal SIGTERM')) {
+          logger.warn('SESSION', 'Generator killed by external signal — aborting session to prevent respawn', {
+            sessionId: session.sessionDbId,
+            provider,
+            error: errorMsg
+          });
+          myController.abort();
+          return;
+        }
+
         logger.error('SESSION', `Generator failed`, {
           sessionId: session.sessionDbId,
           provider: provider,
-          error: error.message
+          error: errorMsg
         }, error);
 
         // Mark all processing messages as failed so they can be retried or abandoned
@@ -526,7 +574,7 @@ export class SessionRoutes extends BaseRouteHandler {
   private handleObservationsByClaudeId = this.wrapHandler((req: Request, res: Response): void => {
     const { contentSessionId, tool_name, tool_input, tool_response, cwd } = req.body;
     const platformSource = normalizePlatformSource(req.body.platformSource);
-    const project = typeof cwd === 'string' && cwd.trim() ? getProjectName(cwd) : '';
+    const project = typeof cwd === 'string' && cwd.trim() ? getProjectContext(cwd).primary : '';
 
     if (!contentSessionId) {
       return this.badRequest(res, 'Missing contentSessionId');
@@ -705,6 +753,9 @@ export class SessionRoutes extends BaseRouteHandler {
       status: 'active',
       sessionDbId,
       queueLength,
+      // Expose whether the last storage operation included a summary record.
+      // The Stop hook uses this to detect silent summary loss when the queue empties (#1633).
+      summaryStored: session.lastSummaryStored ?? null,
       uptime: Date.now() - session.startTime
     });
   });

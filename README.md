@@ -172,6 +172,11 @@ Or install for Gemini CLI (auto-detects `~/.gemini`):
 ```bash
 npx claude-mem install --ide gemini-cli
 ```
+Or install for OpenCode:
+
+```bash
+npx claude-mem install --ide opencode
+```
 
 Or install for OpenCode:
 

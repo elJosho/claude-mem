@@ -180,7 +180,7 @@ export function storeObservation(
   const timestampIso = new Date(timestampEpoch).toISOString();
 
   // Guard against empty project string (race condition where project isn't set yet)
-  const resolvedProject = project || getCurrentProjectName();
+  const resolvedProject = project || getProjectContext(process.cwd()).primary;
 
   // Content-hash deduplication (same-session, 30s window)
   const contentHash = computeObservationContentHash(memorySessionId, sanitized.title, sanitized.narrative);

@@ -4,6 +4,162 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [12.2.0] - 2026-04-18
+
+## Highlights
+
+**Worktree Adoption** — When a git worktree is merged back into its parent branch, its observations are now consolidated into the parent project's view, so memory follows the code after a merge.
+
+## Features
+
+- **Worktree adoption engine** — consolidates merged-worktree observations under the parent project (#2052)
+- **`npx claude-mem adopt`** — new CLI command with `--dry-run` and `--branch X` flags for manual adoption
+- **Auto-adoption on worker startup** — merged worktrees are adopted automatically when the worker service starts
+- **CWD-based project remap** — project identity derived from `pending_messages.cwd`, applied on worker startup
+- **Parent + worktree read scope** — worktree sessions now include parent repo observations in their read scope
+- **Composite project names** — parent/worktree naming prevents observations from crossing worktrees
+- **Merged-into-parent badge** — UI now flags observations that have been adopted from a merged worktree
+- **Observer-sessions project hidden** — internal bookkeeping project no longer appears in UI lists
+
+## Fixes
+
+- Drop orphan flag when filtering empty-string spawn args (#2049)
+- Self-heal Chroma metadata on re-run
+- Schema guard, startup adoption path, and query parity hardening
+- Git operation timeouts + dry-run sentinel fixes
+- Context derivation uses explicit `projects` array rather than cwd
+
+## Chores
+
+- Removed auto-generated per-directory `CLAUDE.md` files across the tree
+
+**Full Changelog**: https://github.com/thedotmack/claude-mem/compare/v12.1.6...v12.2.0
+
+## [12.1.6] - 2026-04-16
+
+## Fix
+
+**Critical regression fix (#2049): observations no longer save on Claude Code 2.1.109+**
+
+Resolves 100% observation/summary failure on Claude Code 2.1.109+ caused by a latent bug in how the bundled Agent SDK emits the `--setting-sources` flag.
+
+### Root cause
+
+The Agent SDK emits `["--setting-sources", ""]` whenever `settingSources` defaults to `[]`. Our existing Bun-compat filter stripped the empty string but left an orphan `--setting-sources` flag, which then consumed the following `--permission-mode` as its value. Claude Code 2.1.109+ rejects this with:
+
+```
+Error processing --setting-sources:
+  Invalid setting source: --permission-mode.
+```
+
+Every observation SDK spawn crashed with exit code 1 before any data could be written.
+
+### Fix
+
+`ProcessRegistry.createPidCapturingSpawn` now uses a pair-aware filter: when an empty-string arg follows a `--flag`, both are dropped together. The SDK default (no setting sources) is preserved by omission.
+
+### Credits
+
+Thanks to @GigiTiti-Kai for the detailed root-cause report in #2049.
+
+## [12.1.5] - 2026-04-15
+
+Users on v12.1.3 experience 100% observation failure due to empty-string arg filtering corrupting `--setting-sources` on Claude Code 2.1.109+. The fix already landed in v12.1.4 (commit 3d92684 — `fix: filter empty string args before Bun spawn()`). This release forces the update to propagate across npm and the marketplace so every user gets the fix.
+
+## Backlog cleanup
+Also shipped earlier today: the April 2026 backlog consolidation merged 93 PRs and 147 issues into 138 clean tracking issues (95 bugs, 43 feature requests).
+
+## Upgrade
+```bash
+npm install -g claude-mem@12.1.5
+```
+
+## [12.1.4] - 2026-04-15
+
+## Bug Fixes
+
+- **Revert unauthorized $CMEM branding**: A prior Claude instance inserted `$CMEM` token branding into the context injection header during a compression refactor. Reverted back to the original descriptive format: `# [project] recent context, datetime`
+
+## [12.1.3] - 2026-04-15
+
+## What's Changed
+
+### Reverted
+- **Remove overengineered summary salvage logic** (#1850) — Reverts PR #1718 which fabricated synthetic summaries from observation data when the AI returned `<observation>` instead of `<summary>` tags. Missing a summary is preferable to creating a fake one with poorly-mapped fields.
+
+**Full Changelog**: https://github.com/thedotmack/claude-mem/compare/v12.1.2...v12.1.3
+
+## [12.1.2] - 2026-04-15
+
+## Community PRs merged (15)
+
+**Runtime & reliability**
+- #1698 Reap stuck generators in reapStaleSessions (@ousamabenyounes)
+- #1697 Circuit breaker on OpenClaw worker client (@ousamabenyounes)
+- #1696 Resolve Setup hook reference, warn on macOS-only binary (@ousamabenyounes)
+- #1693 Session lifecycle guards to prevent runaway API spend (@ousamabenyounes)
+- #1692 Resolve Gemini CLI 0.37.0 session capture failures (@ousamabenyounes)
+
+**Cross-platform & hooks**
+- #1833 Replace hardcoded nvm/homebrew PATH with login-shell resolution (@masak1yu)
+- #1781 Filter empty-string args before Bun spawn() (@biswanath-cmd)
+- #1780 Fix npx search, default Codex context to workspace-local AGENTS (@enma998)
+
+**Data integrity**
+- #1820 Use parent project name for worktree observation writes (@0xLeathery)
+- #1771 Exclude primary-key index from unique-constraint check in migration 7 (@derjochenmeyer)
+- #1770 Restrict ~/.claude-mem/.env permissions to 0600 (@derjochenmeyer)
+- #1729 Preserve targeted file reads and invalidate on mtime (@quangtran88)
+- #1776 Coerce corpus route filters (@suyua9)
+
+**Docs**
+- #1777 Document CLAUDE_MEM_MODE (@AviArora02-commits)
+- #1765 Update opencode install instructions (@s-uryansh)
+
+## Held for rebase
+- #1748, #1694, #1695 — developed conflicts during batch merge
+
+## Test baseline
+1429 pass / 11 fail (improved from 18 fail at v12.1.1)
+
+## [12.1.1] - 2026-04-15
+
+14 community PRs merged + 1 post-merge bug fix. This patch addresses the most impactful bugs across summary persistence, MCP compliance, cross-platform compatibility, and data integrity.
+
+### Highlights
+
+**Summary pipeline fix** — When the LLM returns `<observation>` tags instead of `<summary>` tags (~72% of the time on v12.0.x), data is now salvaged into a synthetic summary instead of being silently discarded. (#1718)
+
+**MCP compliance** — `list_corpora` now returns proper `CallToolResult` objects instead of bare arrays that crashed MCP clients. Search and timeline tools now declare `inputSchema.properties`. (#1701, #1555)
+
+**Data integrity** — Ghost observations with no content fields are now filtered before storage. Search queries are now scoped to the current project via `WHERE project = ?`. (#1676, #1688... wait, #1688 wasn't in this batch)
+
+### Bug Fixes
+
+- **fix(ResponseProcessor):** salvage synthetic summary when AI returns `<observation>` instead of `<summary>` (#1718)
+- **fix(ResponseProcessor):** broadcast uses `summaryForStore` to support salvaged summaries (post-merge fix for #1718)
+- **fix(hooks):** soft-fail SessionStart health check on cold start (#1725)
+- **fix(deps):** upgrade glob ^11.0.3 → ^13.0.0 for CVE fix (#1724, #1717)
+- **fix(MCP):** wrap `list_corpora` response in CallToolResult shape (#1701, #1700)
+- **fix(MCP):** declare inputSchema properties for search and timeline tools (#1555, #1384, #1413)
+- **fix(config):** use bun to run mcp-server.cjs instead of node shebang (#1658, #1648)
+- **fix(parser):** filter ghost observations with no content fields (#1676, #1625)
+- **fix(chroma):** set cwd to homedir when spawning chroma-mcp to prevent .env.local crash (#1679, #1297)
+- **fix(Windows):** avoid DEP0190 deprecation by using single-string spawnSync (#1677, #1503)
+- **fix(worker):** suppress false ERROR when duplicate daemon loses port bind race (#1680, #1447)
+- **fix(session):** expose `summaryStored` in session status for silent summary loss detection (#1686, #1633)
+- **fix(cross-platform):** add .gitattributes to enforce LF endings on plugin scripts (#1678, #1342)
+- **fix(tests):** remove leaky mock.module() that polluted parallel workers (#1666, #1299)
+
+### Docs
+
+- Add Language Support section to smart-explore/SKILL.md (#1670, #1651)
+- Remove misplaced tree-sitter docs from mem-search/SKILL.md
+
+### Contributors
+
+@ousamabenyounes (10 PRs), @aaronwong1989, @kbroughton, @joao-oliveira-softtor, @octo-patch, @ck0park
+
 ## [12.1.0] - 2026-04-09
 
 ## Knowledge Agents

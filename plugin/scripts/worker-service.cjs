@@ -303,7 +303,7 @@ ${s.stack}`:` ${s.message}`:this.getLevel()===0&&typeof s=="object"?l=`
       UPDATE sdk_sessions
       SET platform_source = '${cn}'
       WHERE platform_source IS NULL OR platform_source = ''
-    `),i||this.db.run("CREATE INDEX IF NOT EXISTS idx_sdk_sessions_platform_source ON sdk_sessions(platform_source)"),this.db.prepare("INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)").run(24,new Date().toISOString()))}addObservationModelColumns(){let e=this.db.query("PRAGMA table_info(observations)").all(),r=e.some(i=>i.name==="generated_by_model"),n=e.some(i=>i.name==="relevance_count");r&&n||(r||this.db.run("ALTER TABLE observations ADD COLUMN generated_by_model TEXT"),n||this.db.run("ALTER TABLE observations ADD COLUMN relevance_count INTEGER DEFAULT 0"),this.db.prepare("INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)").run(26,new Date().toISOString()))}updateMemorySessionId(e,r){this.db.prepare(`
+    `),i||this.db.run("CREATE INDEX IF NOT EXISTS idx_sdk_sessions_platform_source ON sdk_sessions(platform_source)"),this.db.prepare("INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)").run(24,new Date().toISOString()))}addObservationModelColumns(){let e=this.db.query("PRAGMA table_info(observations)").all(),r=e.some(i=>i.name==="generated_by_model"),n=e.some(i=>i.name==="relevance_count");r&&n||(r||this.db.run("ALTER TABLE observations ADD COLUMN generated_by_model TEXT"),n||this.db.run("ALTER TABLE observations ADD COLUMN relevance_count INTEGER DEFAULT 0"),this.db.prepare("INSERT OR IGNORE INTO schema_versions (version, applied_at) VALUES (?, ?)").run(26,new Date().toISOString()))}ensureMergedIntoProjectColumns(){this.db.query("PRAGMA table_info(observations)").all().some(n=>n.name==="merged_into_project")||this.db.run("ALTER TABLE observations ADD COLUMN merged_into_project TEXT"),this.db.run("CREATE INDEX IF NOT EXISTS idx_observations_merged_into ON observations(merged_into_project)"),this.db.query("PRAGMA table_info(session_summaries)").all().some(n=>n.name==="merged_into_project")||this.db.run("ALTER TABLE session_summaries ADD COLUMN merged_into_project TEXT"),this.db.run("CREATE INDEX IF NOT EXISTS idx_summaries_merged_into ON session_summaries(merged_into_project)")}updateMemorySessionId(e,r){this.db.prepare(`
       UPDATE sdk_sessions
       SET memory_session_id = ?
       WHERE id = ?
@@ -387,7 +387,7 @@ ${s.stack}`:` ${s.message}`:this.getLevel()===0&&typeof s=="object"?l=`
       LEFT JOIN sdk_sessions s ON up.content_session_id = s.content_session_id
       ORDER BY up.created_at_epoch DESC
       LIMIT ?
-    `).all(e)}getAllProjects(e){let r=e?Rt(e):void 0,n=`
+    `).all(e)}getAllProjects(e){let r=e?St(e):void 0,n=`
       SELECT DISTINCT project
       FROM sdk_sessions
       WHERE project IS NOT NULL AND project != '' AND project != ?
@@ -662,7 +662,7 @@ ${s.stack}`:` ${s.message}`:this.getLevel()===0&&typeof s=="object"?l=`
         content_session_id, memory_session_id, project, platform_source, user_prompt,
         started_at, started_at_epoch, completed_at, completed_at_epoch, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(e.content_session_id,e.memory_session_id,e.project,Rt(e.platform_source),e.user_prompt,e.started_at,e.started_at_epoch,e.completed_at,e.completed_at_epoch,e.status).lastInsertRowid}}importSessionSummary(e){let r=this.db.prepare("SELECT id FROM session_summaries WHERE memory_session_id = ?").get(e.memory_session_id);return r?{imported:!1,id:r.id}:{imported:!0,id:this.db.prepare(`
+    `).run(e.content_session_id,e.memory_session_id,e.project,St(e.platform_source),e.user_prompt,e.started_at,e.started_at_epoch,e.completed_at,e.completed_at_epoch,e.status).lastInsertRowid}}importSessionSummary(e){let r=this.db.prepare("SELECT id FROM session_summaries WHERE memory_session_id = ?").get(e.memory_session_id);return r?{imported:!1,id:r.id}:{imported:!0,id:this.db.prepare(`
       INSERT INTO session_summaries (
         memory_session_id, project, request, investigated, learned,
         completed, next_steps, files_read, files_edited, notes,
@@ -889,7 +889,7 @@ Tips:
       o.created_at_epoch
     FROM observations o
     LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
-    WHERE o.project = ?
+    WHERE (o.project = ? OR o.merged_into_project = ?)
       AND type IN (${s})
       AND EXISTS (
         SELECT 1 FROM json_each(o.concepts)
@@ -912,7 +912,7 @@ Tips:
       ss.created_at_epoch
     FROM session_summaries ss
     LEFT JOIN sdk_sessions s ON ss.memory_session_id = s.memory_session_id
-    WHERE ss.project = ?
+    WHERE (ss.project = ? OR ss.merged_into_project = ?)
       ${n?"AND COALESCE(s.platform_source, 'claude') = ?":""}
     ORDER BY ss.created_at_epoch DESC
     LIMIT ?
@@ -935,7 +935,8 @@ Tips:
       o.project
     FROM observations o
     LEFT JOIN sdk_sessions s ON o.memory_session_id = s.memory_session_id
-    WHERE o.project IN (${c})
+    WHERE (o.project IN (${c})
+           OR o.merged_into_project IN (${c}))
       AND type IN (${s})
       AND EXISTS (
         SELECT 1 FROM json_each(o.concepts)
@@ -959,7 +960,8 @@ Tips:
       ss.project
     FROM session_summaries ss
     LEFT JOIN sdk_sessions s ON ss.memory_session_id = s.memory_session_id
-    WHERE ss.project IN (${i})
+    WHERE (ss.project IN (${i})
+           OR ss.merged_into_project IN (${i}))
       ${n?"AND COALESCE(s.platform_source, 'claude') = ?":""}
     ORDER BY ss.created_at_epoch DESC
     LIMIT ?
