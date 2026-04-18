@@ -14,7 +14,7 @@ import {
   LatestPromptResult
 } from '../../types/database.js';
 import type { PendingMessageStore } from './PendingMessageStore.js';
-import { computeObservationContentHash, findDuplicateObservation } from './observations/store.js';
+import { computeObservationContentHash, findDuplicateObservation, computeEchoContentHash, findEchoDuplicate } from './observations/store.js';
 import { parseFileList } from './observations/files.js';
 import { DEFAULT_PLATFORM_SOURCE, normalizePlatformSource, sortPlatformSources } from '../../shared/platform-source.js';
 
@@ -1883,6 +1883,16 @@ export class SessionStore {
       return { id: existing.id, createdAtEpoch: existing.created_at_epoch };
     }
 
+    // Cross-session echo dedup (7-day window, project-scoped, session-agnostic)
+    const echoHash = computeEchoContentHash(sanitized.title, sanitized.narrative);
+    const echoDup = findEchoDuplicate(this.db, project, echoHash, sanitized.title, timestampEpoch);
+    if (echoDup) {
+      logger.info('ECHO_DEDUP', `Skipped echo observation | title="${sanitized.title}" | echoOf=obs#${echoDup.id} ("${echoDup.title}")`, {
+        memorySessionId, project
+      });
+      return { id: echoDup.id, createdAtEpoch: echoDup.created_at_epoch };
+    }
+
     const stmt = this.db.prepare(`
       INSERT INTO observations
       (memory_session_id, project, type, title, subtitle, facts, narrative, concepts,
@@ -2039,6 +2049,16 @@ export class SessionStore {
           continue;
         }
 
+        // Cross-session echo dedup (7-day window, project-scoped, session-agnostic)
+        const echoHash = computeEchoContentHash(sanitizedObs.title, sanitizedObs.narrative);
+        const echoDup = findEchoDuplicate(this.db, project, echoHash, sanitizedObs.title, timestampEpoch);
+        if (echoDup) {
+          logger.info('ECHO_DEDUP', `Skipped echo observation | title="${sanitizedObs.title}" | echoOf=obs#${echoDup.id} ("${echoDup.title}")`, {
+            memorySessionId, project
+          });
+          continue;
+        }
+
         const result = obsStmt.run(
           memorySessionId,
           project,
@@ -2172,6 +2192,16 @@ export class SessionStore {
         const existing = findDuplicateObservation(this.db, contentHash, timestampEpoch);
         if (existing) {
           observationIds.push(existing.id);
+          continue;
+        }
+
+        // Cross-session echo dedup (7-day window, project-scoped, session-agnostic)
+        const echoHash = computeEchoContentHash(sanitizedObs.title, sanitizedObs.narrative);
+        const echoDup = findEchoDuplicate(this.db, project, echoHash, sanitizedObs.title, timestampEpoch);
+        if (echoDup) {
+          logger.info('ECHO_DEDUP', `Skipped echo observation | title="${sanitizedObs.title}" | echoOf=obs#${echoDup.id} ("${echoDup.title}")`, {
+            memorySessionId, project
+          });
           continue;
         }
 

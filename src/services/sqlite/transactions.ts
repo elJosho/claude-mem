@@ -10,7 +10,7 @@ import { Database } from 'bun:sqlite';
 import { logger } from '../../utils/logger.js';
 import type { ObservationInput } from './observations/types.js';
 import type { SummaryInput } from './summaries/types.js';
-import { computeObservationContentHash, findDuplicateObservation } from './observations/store.js';
+import { computeObservationContentHash, findDuplicateObservation, computeEchoContentHash, findEchoDuplicate } from './observations/store.js';
 import { sanitizeObservationInputForStorage, sanitizeSummaryInputForStorage } from '../../utils/tag-stripping.js';
 
 /**
@@ -76,10 +76,21 @@ export function storeObservationsAndMarkComplete(
     for (const observation of observations) {
       const sanitizedObs = sanitizeObservationInputForStorage(observation);
 
+      // Same-session dedup (30s window, exact hash with memorySessionId)
       const contentHash = computeObservationContentHash(memorySessionId, sanitizedObs.title, sanitizedObs.narrative);
       const existing = findDuplicateObservation(db, contentHash, timestampEpoch);
       if (existing) {
         observationIds.push(existing.id);
+        continue;
+      }
+
+      // Cross-session echo dedup (7-day window, project-scoped, session-agnostic)
+      const echoHash = computeEchoContentHash(sanitizedObs.title, sanitizedObs.narrative);
+      const echoDup = findEchoDuplicate(db, project, echoHash, sanitizedObs.title, timestampEpoch);
+      if (echoDup) {
+        logger.info('ECHO_DEDUP', `Skipped echo observation | title="${sanitizedObs.title}" | echoOf=obs#${echoDup.id} ("${echoDup.title}")`, {
+          memorySessionId, project
+        });
         continue;
       }
 
@@ -199,10 +210,21 @@ export function storeObservations(
     for (const observation of observations) {
       const sanitizedObs = sanitizeObservationInputForStorage(observation);
 
+      // Same-session dedup (30s window, exact hash with memorySessionId)
       const contentHash = computeObservationContentHash(memorySessionId, sanitizedObs.title, sanitizedObs.narrative);
       const existing = findDuplicateObservation(db, contentHash, timestampEpoch);
       if (existing) {
         observationIds.push(existing.id);
+        continue;
+      }
+
+      // Cross-session echo dedup (7-day window, project-scoped, session-agnostic)
+      const echoHash = computeEchoContentHash(sanitizedObs.title, sanitizedObs.narrative);
+      const echoDup = findEchoDuplicate(db, project, echoHash, sanitizedObs.title, timestampEpoch);
+      if (echoDup) {
+        logger.info('ECHO_DEDUP', `Skipped echo observation | title="${sanitizedObs.title}" | echoOf=obs#${echoDup.id} ("${echoDup.title}")`, {
+          memorySessionId, project
+        });
         continue;
       }
 
