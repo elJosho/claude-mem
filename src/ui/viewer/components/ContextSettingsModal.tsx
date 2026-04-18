@@ -329,46 +329,88 @@ export function ContextSettingsModal({
               </div>
             </CollapsibleSection>
 
-            {/* Section 4: Advanced */}
+            {/* Section 3: AI Provider */}
             <CollapsibleSection
-              title="Advanced"
-              description="AI provider and model selection"
+              title="AI Provider"
+              description="Model and provider for generating observations"
               defaultOpen={false}
             >
               <FormField
-                label="AI Provider"
-                tooltip="Choose between Claude (via Agent SDK) or Gemini (via REST API)"
+                label="Provider"
+                tooltip="Choose which AI provider processes your observations"
               >
                 <select
                   value={formState.CLAUDE_MEM_PROVIDER || 'claude'}
                   onChange={(e) => updateSetting('CLAUDE_MEM_PROVIDER', e.target.value)}
                 >
                   <option value="claude">Claude (uses your Claude account)</option>
+                  <option value="bedrock">AWS Bedrock (uses AWS credentials)</option>
                   <option value="gemini">Gemini (uses API key)</option>
                   <option value="openrouter">OpenRouter (multi-model)</option>
                 </select>
               </FormField>
 
               {formState.CLAUDE_MEM_PROVIDER === 'claude' && (
-                <FormField
-                  label="Claude Model"
-                  tooltip="Claude model used for generating observations"
-                >
-                  <select
-                    value={formState.CLAUDE_MEM_MODEL || 'haiku'}
-                    onChange={(e) => updateSetting('CLAUDE_MEM_MODEL', e.target.value)}
+                <>
+                  <FormField
+                    label="Model"
+                    tooltip="Claude model used for generating observations"
                   >
-                    <option value="haiku">haiku (fastest)</option>
-                    <option value="sonnet">sonnet (balanced)</option>
-                    <option value="opus">opus (highest quality)</option>
-                  </select>
-                </FormField>
+                    <select
+                      value={formState.CLAUDE_MEM_MODEL || 'haiku'}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_MODEL', e.target.value)}
+                    >
+                      <option value="haiku">haiku (fastest)</option>
+                      <option value="sonnet">sonnet (balanced)</option>
+                      <option value="opus">opus (highest quality)</option>
+                    </select>
+                  </FormField>
+                  <FormField
+                    label="Auth Method"
+                    tooltip="How Claude authenticates: 'cli' uses your Claude subscription, 'api' uses an API key"
+                  >
+                    <select
+                      value={formState.CLAUDE_MEM_CLAUDE_AUTH_METHOD || 'cli'}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_CLAUDE_AUTH_METHOD', e.target.value)}
+                    >
+                      <option value="cli">CLI (subscription billing)</option>
+                      <option value="api">API Key</option>
+                    </select>
+                  </FormField>
+                </>
+              )}
+
+              {formState.CLAUDE_MEM_PROVIDER === 'bedrock' && (
+                <>
+                  <FormField
+                    label="Region"
+                    tooltip="AWS region for Bedrock (leave blank to use AWS_REGION env var)"
+                  >
+                    <input
+                      type="text"
+                      value={formState.CLAUDE_MEM_BEDROCK_REGION || ''}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_BEDROCK_REGION', e.target.value)}
+                      placeholder="e.g., us-east-1 (or leave blank for env var)"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Model"
+                    tooltip="Bedrock model ID or alias (haiku, sonnet, opus)"
+                  >
+                    <input
+                      type="text"
+                      value={formState.CLAUDE_MEM_BEDROCK_MODEL || 'us.anthropic.claude-sonnet-4-6-v1'}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_BEDROCK_MODEL', e.target.value)}
+                      placeholder="e.g., us.anthropic.claude-sonnet-4-6-v1"
+                    />
+                  </FormField>
+                </>
               )}
 
               {formState.CLAUDE_MEM_PROVIDER === 'gemini' && (
                 <>
                   <FormField
-                    label="Gemini API Key"
+                    label="API Key"
                     tooltip="Your Google AI Studio API key (or set GEMINI_API_KEY env var)"
                   >
                     <input
@@ -379,7 +421,7 @@ export function ContextSettingsModal({
                     />
                   </FormField>
                   <FormField
-                    label="Gemini Model"
+                    label="Model"
                     tooltip="Gemini model used for generating observations"
                   >
                     <select
@@ -395,7 +437,7 @@ export function ContextSettingsModal({
                     <ToggleSwitch
                       id="gemini-rate-limiting"
                       label="Rate Limiting"
-                      description="Enable for free tier (10-30 RPM). Disable if you have billing set up (1000+ RPM)."
+                      description="Enable for free tier (10-30 RPM). Disable if you have billing set up."
                       checked={formState.CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED === 'true'}
                       onChange={(checked) => updateSetting('CLAUDE_MEM_GEMINI_RATE_LIMITING_ENABLED', checked ? 'true' : 'false')}
                     />
@@ -406,7 +448,7 @@ export function ContextSettingsModal({
               {formState.CLAUDE_MEM_PROVIDER === 'openrouter' && (
                 <>
                   <FormField
-                    label="OpenRouter API Key"
+                    label="API Key"
                     tooltip="Your OpenRouter API key from openrouter.ai (or set OPENROUTER_API_KEY env var)"
                   >
                     <input
@@ -417,8 +459,8 @@ export function ContextSettingsModal({
                     />
                   </FormField>
                   <FormField
-                    label="OpenRouter Model"
-                    tooltip="Model identifier from OpenRouter (e.g., anthropic/claude-3.5-sonnet, google/gemini-2.0-flash-thinking-exp)"
+                    label="Model"
+                    tooltip="Model identifier from OpenRouter (e.g., anthropic/claude-3.5-sonnet)"
                   >
                     <input
                       type="text"
@@ -429,7 +471,7 @@ export function ContextSettingsModal({
                   </FormField>
                   <FormField
                     label="Site URL (Optional)"
-                    tooltip="Your site URL for OpenRouter analytics (optional)"
+                    tooltip="Your site URL for OpenRouter analytics"
                   >
                     <input
                       type="text"
@@ -440,7 +482,7 @@ export function ContextSettingsModal({
                   </FormField>
                   <FormField
                     label="App Name (Optional)"
-                    tooltip="Your app name for OpenRouter analytics (optional)"
+                    tooltip="Your app name for OpenRouter analytics"
                   >
                     <input
                       type="text"
@@ -451,10 +493,221 @@ export function ContextSettingsModal({
                   </FormField>
                 </>
               )}
+            </CollapsibleSection>
 
+            {/* Section 4: Tier Routing */}
+            <CollapsibleSection
+              title="Tier Routing"
+              description="Route observations to models by complexity"
+              defaultOpen={false}
+            >
+              <ToggleSwitch
+                id="tier-routing-enabled"
+                label="Enable Tier Routing"
+                description="Use cheaper models for simple observations, full model for complex ones"
+                checked={formState.CLAUDE_MEM_TIER_ROUTING_ENABLED === 'true'}
+                onChange={() => toggleBoolean('CLAUDE_MEM_TIER_ROUTING_ENABLED')}
+              />
+              {formState.CLAUDE_MEM_TIER_ROUTING_ENABLED === 'true' && (
+                <>
+                  <FormField
+                    label="Simple Model"
+                    tooltip="Model alias or ID for simple tool observations (Read, Glob, Grep). Use 'haiku' for portable alias."
+                  >
+                    <input
+                      type="text"
+                      value={formState.CLAUDE_MEM_TIER_SIMPLE_MODEL || 'haiku'}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_TIER_SIMPLE_MODEL', e.target.value)}
+                      placeholder="e.g., haiku"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Summary Model"
+                    tooltip="Model alias or ID for session summaries. Leave blank to use the default model."
+                  >
+                    <input
+                      type="text"
+                      value={formState.CLAUDE_MEM_TIER_SUMMARY_MODEL || ''}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_TIER_SUMMARY_MODEL', e.target.value)}
+                      placeholder="Leave blank for default model"
+                    />
+                  </FormField>
+                </>
+              )}
+            </CollapsibleSection>
+
+            {/* Section 5: Features */}
+            <CollapsibleSection
+              title="Features"
+              description="Toggle optional capabilities"
+              defaultOpen={false}
+            >
+              <div className="display-subsection">
+                <span className="subsection-label">Context Injection</span>
+                <div className="toggle-group">
+                  <ToggleSwitch
+                    id="show-last-summary"
+                    label="Include last summary"
+                    description="Add previous session's summary to context"
+                    checked={formState.CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY === 'true'}
+                    onChange={() => toggleBoolean('CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY')}
+                  />
+                  <ToggleSwitch
+                    id="show-last-message"
+                    label="Include last message"
+                    description="Add previous session's final message"
+                    checked={formState.CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE === 'true'}
+                    onChange={() => toggleBoolean('CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE')}
+                  />
+                  <ToggleSwitch
+                    id="show-terminal-output"
+                    label="Include terminal output"
+                    description="Add terminal command output to observations"
+                    checked={formState.CLAUDE_MEM_CONTEXT_SHOW_TERMINAL_OUTPUT === 'true'}
+                    onChange={() => toggleBoolean('CLAUDE_MEM_CONTEXT_SHOW_TERMINAL_OUTPUT')}
+                  />
+                </div>
+              </div>
+
+              <div className="display-subsection">
+                <span className="subsection-label">Semantic Search</span>
+                <div className="toggle-group">
+                  <ToggleSwitch
+                    id="semantic-inject"
+                    label="Semantic injection"
+                    description="Inject relevant past observations on every prompt via Chroma vector search"
+                    checked={formState.CLAUDE_MEM_SEMANTIC_INJECT === 'true'}
+                    onChange={() => toggleBoolean('CLAUDE_MEM_SEMANTIC_INJECT')}
+                  />
+                </div>
+                {formState.CLAUDE_MEM_SEMANTIC_INJECT === 'true' && (
+                  <FormField
+                    label="Injection Limit"
+                    tooltip="Max observations to inject per prompt (1-20)"
+                  >
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={formState.CLAUDE_MEM_SEMANTIC_INJECT_LIMIT || '5'}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_SEMANTIC_INJECT_LIMIT', e.target.value)}
+                    />
+                  </FormField>
+                )}
+              </div>
+
+              <div className="display-subsection">
+                <span className="subsection-label">Integrations</span>
+                <div className="toggle-group">
+                  <ToggleSwitch
+                    id="folder-claudemd"
+                    label="Folder CLAUDE.md"
+                    description="Write project-level CLAUDE.md files with memory context"
+                    checked={formState.CLAUDE_MEM_FOLDER_CLAUDEMD_ENABLED === 'true'}
+                    onChange={() => toggleBoolean('CLAUDE_MEM_FOLDER_CLAUDEMD_ENABLED')}
+                  />
+                  {formState.CLAUDE_MEM_FOLDER_CLAUDEMD_ENABLED === 'true' && (
+                    <ToggleSwitch
+                      id="folder-use-local-md"
+                      label="Use CLAUDE.local.md"
+                      description="Write to CLAUDE.local.md instead of CLAUDE.md"
+                      checked={formState.CLAUDE_MEM_FOLDER_USE_LOCAL_MD === 'true'}
+                      onChange={() => toggleBoolean('CLAUDE_MEM_FOLDER_USE_LOCAL_MD')}
+                    />
+                  )}
+                  <ToggleSwitch
+                    id="transcripts-enabled"
+                    label="Transcript ingestion"
+                    description="Watch and ingest transcripts from Codex and other clients"
+                    checked={formState.CLAUDE_MEM_TRANSCRIPTS_ENABLED === 'true'}
+                    onChange={() => toggleBoolean('CLAUDE_MEM_TRANSCRIPTS_ENABLED')}
+                  />
+                </div>
+              </div>
+
+              <div className="display-subsection">
+                <span className="subsection-label">Exclusions</span>
+                <FormField
+                  label="Excluded Projects"
+                  tooltip="Comma-separated glob patterns for project paths to exclude from memory (e.g., */node_modules/*,*/tmp/*)"
+                >
+                  <input
+                    type="text"
+                    value={formState.CLAUDE_MEM_EXCLUDED_PROJECTS || ''}
+                    onChange={(e) => updateSetting('CLAUDE_MEM_EXCLUDED_PROJECTS', e.target.value)}
+                    placeholder="e.g., */node_modules/*,*/tmp/*"
+                  />
+                </FormField>
+              </div>
+            </CollapsibleSection>
+
+            {/* Section 6: Vector Search */}
+            <CollapsibleSection
+              title="Vector Search"
+              description="Chroma embedding database configuration"
+              defaultOpen={false}
+            >
+              <ToggleSwitch
+                id="chroma-enabled"
+                label="Enable Chroma"
+                description="Use Chroma vector DB for semantic search. Disable for SQLite-only mode."
+                checked={formState.CLAUDE_MEM_CHROMA_ENABLED === 'true'}
+                onChange={() => toggleBoolean('CLAUDE_MEM_CHROMA_ENABLED')}
+              />
+              {formState.CLAUDE_MEM_CHROMA_ENABLED === 'true' && (
+                <>
+                  <FormField
+                    label="Mode"
+                    tooltip="'local' runs an embedded Chroma instance, 'remote' connects to an existing server"
+                  >
+                    <select
+                      value={formState.CLAUDE_MEM_CHROMA_MODE || 'local'}
+                      onChange={(e) => updateSetting('CLAUDE_MEM_CHROMA_MODE', e.target.value)}
+                    >
+                      <option value="local">Local (embedded)</option>
+                      <option value="remote">Remote (connect to server)</option>
+                    </select>
+                  </FormField>
+                  {formState.CLAUDE_MEM_CHROMA_MODE === 'remote' && (
+                    <>
+                      <FormField
+                        label="Host"
+                        tooltip="Chroma server hostname or IP"
+                      >
+                        <input
+                          type="text"
+                          value={formState.CLAUDE_MEM_CHROMA_HOST || '127.0.0.1'}
+                          onChange={(e) => updateSetting('CLAUDE_MEM_CHROMA_HOST', e.target.value)}
+                          placeholder="127.0.0.1"
+                        />
+                      </FormField>
+                      <FormField
+                        label="Port"
+                        tooltip="Chroma server port"
+                      >
+                        <input
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={formState.CLAUDE_MEM_CHROMA_PORT || '8000'}
+                          onChange={(e) => updateSetting('CLAUDE_MEM_CHROMA_PORT', e.target.value)}
+                        />
+                      </FormField>
+                    </>
+                  )}
+                </>
+              )}
+            </CollapsibleSection>
+
+            {/* Section 7: System */}
+            <CollapsibleSection
+              title="System"
+              description="Worker and process configuration"
+              defaultOpen={false}
+            >
               <FormField
                 label="Worker Port"
-                tooltip="Port for the background worker service"
+                tooltip="Port for the background worker service (requires restart)"
               >
                 <input
                   type="number"
@@ -464,23 +717,32 @@ export function ContextSettingsModal({
                   onChange={(e) => updateSetting('CLAUDE_MEM_WORKER_PORT', e.target.value)}
                 />
               </FormField>
-
-              <div className="toggle-group" style={{ marginTop: '12px' }}>
-                <ToggleSwitch
-                  id="show-last-summary"
-                  label="Include last summary"
-                  description="Add previous session's summary to context"
-                  checked={formState.CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY === 'true'}
-                  onChange={() => toggleBoolean('CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY')}
+              <FormField
+                label="Log Level"
+                tooltip="Verbosity of worker logs"
+              >
+                <select
+                  value={formState.CLAUDE_MEM_LOG_LEVEL || 'INFO'}
+                  onChange={(e) => updateSetting('CLAUDE_MEM_LOG_LEVEL', e.target.value)}
+                >
+                  <option value="DEBUG">DEBUG</option>
+                  <option value="INFO">INFO</option>
+                  <option value="WARN">WARN</option>
+                  <option value="ERROR">ERROR</option>
+                </select>
+              </FormField>
+              <FormField
+                label="Max Concurrent Agents"
+                tooltip="Maximum number of concurrent Claude SDK agent subprocesses (1-10)"
+              >
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={formState.CLAUDE_MEM_MAX_CONCURRENT_AGENTS || '2'}
+                  onChange={(e) => updateSetting('CLAUDE_MEM_MAX_CONCURRENT_AGENTS', e.target.value)}
                 />
-                <ToggleSwitch
-                  id="show-last-message"
-                  label="Include last message"
-                  description="Add previous session's final message"
-                  checked={formState.CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE === 'true'}
-                  onChange={() => toggleBoolean('CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE')}
-                />
-              </div>
+              </FormField>
             </CollapsibleSection>
           </div>
         </div>
