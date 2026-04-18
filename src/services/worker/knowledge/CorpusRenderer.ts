@@ -6,6 +6,7 @@
  */
 
 import type { CorpusFile, CorpusObservation, CorpusFilter } from './types.js';
+import { logger } from '../../../utils/logger.js';
 
 export class CorpusRenderer {
   /**

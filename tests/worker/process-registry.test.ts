@@ -9,6 +9,7 @@ import {
   waitForSlot,
   ensureProcessExit,
 } from '../../src/services/worker/ProcessRegistry.js';
+import { getSupervisor } from '../../src/supervisor/index.js';
 
 /**
  * Create a mock ChildProcess that behaves like a real one for testing.
@@ -36,11 +37,9 @@ function createMockProcess(overrides: { exitCode?: number | null; killed?: boole
   return mock;
 }
 
-// Helper to clear registry between tests by unregistering all
+// Helper to clear registry between tests by clearing the full supervisor registry
 function clearRegistry() {
-  for (const p of getActiveProcesses()) {
-    unregisterProcess(p.pid);
-  }
+  getSupervisor().getRegistry().clear();
 }
 
 describe('ProcessRegistry', () => {

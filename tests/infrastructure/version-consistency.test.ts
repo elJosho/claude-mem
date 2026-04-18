@@ -24,7 +24,8 @@ describe('Version Consistency', () => {
     
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     expect(packageJson.version).toBeDefined();
-    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+$/);
+    // Support standard semver with optional pre-release tag (e.g., 12.1.0-elJosho)
+    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+(-[\w.]+)?$/);
     
     rootVersion = packageJson.version;
   });
@@ -97,10 +98,12 @@ describe('Version Consistency', () => {
   });
 
   it('should validate version format is semver compliant', () => {
-    // Ensure version follows semantic versioning: MAJOR.MINOR.PATCH
-    expect(rootVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    // Ensure version follows semantic versioning: MAJOR.MINOR.PATCH with optional pre-release
+    expect(rootVersion).toMatch(/^\d+\.\d+\.\d+(-[\w.]+)?$/);
     
-    const [major, minor, patch] = rootVersion.split('.').map(Number);
+    // Parse core version (strip pre-release tag if present)
+    const coreVersion = rootVersion.split('-')[0];
+    const [major, minor, patch] = coreVersion.split('.').map(Number);
     expect(major).toBeGreaterThanOrEqual(0);
     expect(minor).toBeGreaterThanOrEqual(0);
     expect(patch).toBeGreaterThanOrEqual(0);

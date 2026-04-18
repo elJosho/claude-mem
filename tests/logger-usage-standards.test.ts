@@ -24,6 +24,7 @@ const EXCLUDED_PATTERNS = [
   /\.d\.ts$/,            // Type declaration files
   /^ui\//,               // UI components (separate logging context)
   /^bin\//,              // CLI utilities (may use console.log for output)
+  /^npx-cli\//,          // NPX CLI commands (console.log for interactive installer/runtime output)
   /index\.ts$/,          // Re-export files
   /logger\.ts$/,         // Logger itself
   /hook-response\.ts$/,  // Pure data structure
@@ -33,7 +34,9 @@ const EXCLUDED_PATTERNS = [
   /migrations\.ts$/,     // Database migrations (console.log for migration output)
   /worker-service\.ts$/, // CLI entry point with interactive setup wizard (console.log for user prompts)
   /integrations\/.*Installer\.ts$/, // CLI installer commands (console.log for interactive installation output)
+  /integrations\/McpIntegrations\.ts$/,  // MCP integration installer uses console.log for interactive user output
   /SettingsDefaultsManager\.ts$/,  // Must use console.log to avoid circular dependency with logger
+  /smart-file-read\/parser\.ts$/,  // Tree-sitter parser uses console.error for grammar-not-found diagnostics (no logger context)
   /user-message-hook\.ts$/,  // Deprecated - kept for reference only, not registered in hooks.json
   /cli\/hook-command\.ts$/,  // CLI hook command uses console.log/error for hook protocol output
   /cli\/handlers\/user-message\.ts$/,  // User message handler uses console.error for user-visible context

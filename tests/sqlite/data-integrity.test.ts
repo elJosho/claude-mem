@@ -96,9 +96,11 @@ describe('TRIAGE-03: Data Integrity', () => {
       const obs = createObservationInput({ title: 'Same Title', narrative: 'Same Narrative' });
 
       const now = Date.now();
-      const result1 = storeObservation(db, memId, 'test-project', obs, 1, 0, now);
+      const result1 = storeObservation(db, memId, 'test-project-dedup-2a', obs, 1, 0, now);
       // 31 seconds later — outside the 30s window
-      const result2 = storeObservation(db, memId, 'test-project', obs, 1, 0, now + 31_000);
+      // Use a different project to isolate the 30s content-hash dedup test from
+      // the 7-day cross-session echo dedup (which is project-scoped)
+      const result2 = storeObservation(db, memId, 'test-project-dedup-2b', obs, 1, 0, now + 31_000);
 
       expect(result2.id).not.toBe(result1.id);
     });

@@ -211,9 +211,11 @@ describe('Observations Module', () => {
       const memB1 = createSessionWithMemoryId('content-b1', 'session-b1', 'project-b');
       const memA2 = createSessionWithMemoryId('content-a2', 'session-a2', 'project-a');
 
-      storeObservation(db, memA1, 'project-a', createObservationInput());
-      storeObservation(db, memB1, 'project-b', createObservationInput());
-      storeObservation(db, memA2, 'project-a', createObservationInput());
+      // Use unique titles to avoid cross-session echo dedup (which deduplicates
+      // observations with the same title/narrative within the same project)
+      storeObservation(db, memA1, 'project-a', createObservationInput({ title: 'Observation Alpha' }));
+      storeObservation(db, memB1, 'project-b', createObservationInput({ title: 'Observation Beta' }));
+      storeObservation(db, memA2, 'project-a', createObservationInput({ title: 'Observation Gamma' }));
 
       const recentA = getRecentObservations(db, 'project-a', 10);
       const recentB = getRecentObservations(db, 'project-b', 10);
