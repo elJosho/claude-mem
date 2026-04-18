@@ -20,6 +20,7 @@ import type { WorkerService } from '../../../worker-service.js';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { normalizePlatformSource } from '../../../../shared/platform-source.js';
 import { getObservationsByFilePath } from '../../../sqlite/observations/get.js';
+import { PendingMessageStore } from '../../../sqlite/PendingMessageStore.js';
 
 export class DataRoutes extends BaseRouteHandler {
   constructor(
@@ -305,7 +306,9 @@ export class DataRoutes extends BaseRouteHandler {
   private handleGetProcessingStatus = this.wrapHandler((req: Request, res: Response): void => {
     const isProcessing = this.sessionManager.isAnySessionProcessing();
     const queueDepth = this.sessionManager.getTotalActiveWork(); // Includes queued + actively processing
-    res.json({ isProcessing, queueDepth });
+    const pendingStore = new PendingMessageStore(this.dbManager.getSessionStore().db, 3);
+    const { totalPending, totalProcessing, totalFailed } = pendingStore.getQueueStatusCounts();
+    res.json({ isProcessing, queueDepth, totalPending, totalProcessing, totalFailed });
   });
 
   /**
@@ -424,7 +427,6 @@ export class DataRoutes extends BaseRouteHandler {
    * Returns all pending, processing, and failed messages with optional recently processed
    */
   private handleGetPendingQueue = this.wrapHandler((req: Request, res: Response): void => {
-    const { PendingMessageStore } = require('../../../sqlite/PendingMessageStore.js');
     const pendingStore = new PendingMessageStore(this.dbManager.getSessionStore().db, 3);
 
     // Get queue contents (pending, processing, failed)
@@ -478,12 +480,13 @@ export class DataRoutes extends BaseRouteHandler {
    * Returns the number of messages cleared
    */
   private handleClearFailedQueue = this.wrapHandler((req: Request, res: Response): void => {
-    const { PendingMessageStore } = require('../../../sqlite/PendingMessageStore.js');
     const pendingStore = new PendingMessageStore(this.dbManager.getSessionStore().db, 3);
 
     const clearedCount = pendingStore.clearFailed();
 
     logger.info('QUEUE', 'Cleared failed queue messages', { clearedCount });
+
+    this.workerService.broadcastProcessingStatus();
 
     res.json({
       success: true,
@@ -497,12 +500,13 @@ export class DataRoutes extends BaseRouteHandler {
    * Returns the number of messages cleared
    */
   private handleClearAllQueue = this.wrapHandler((req: Request, res: Response): void => {
-    const { PendingMessageStore } = require('../../../sqlite/PendingMessageStore.js');
     const pendingStore = new PendingMessageStore(this.dbManager.getSessionStore().db, 3);
 
     const clearedCount = pendingStore.clearAll();
 
     logger.warn('QUEUE', 'Cleared ALL queue messages (pending, processing, failed)', { clearedCount });
+
+    this.workerService.broadcastProcessingStatus();
 
     res.json({
       success: true,

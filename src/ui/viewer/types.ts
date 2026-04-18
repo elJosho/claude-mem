@@ -58,6 +58,9 @@ export interface StreamEvent {
   prompt?: UserPrompt;
   isProcessing?: boolean;
   queueDepth?: number;
+  totalPending?: number;
+  totalProcessing?: number;
+  totalFailed?: number;
 }
 
 export interface ProjectCatalog {

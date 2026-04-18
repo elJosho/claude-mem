@@ -14,6 +14,7 @@ import { SSEBroadcaster } from '../../SSEBroadcaster.js';
 import { DatabaseManager } from '../../DatabaseManager.js';
 import { SessionManager } from '../../SessionManager.js';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
+import { PendingMessageStore } from '../../../sqlite/PendingMessageStore.js';
 
 export class ViewerRoutes extends BaseRouteHandler {
   constructor(
@@ -97,10 +98,15 @@ export class ViewerRoutes extends BaseRouteHandler {
     // Send initial processing status (based on queue depth + active generators)
     const isProcessing = this.sessionManager.isAnySessionProcessing();
     const queueDepth = this.sessionManager.getTotalActiveWork(); // Includes queued + actively processing
+    const pendingStore = new PendingMessageStore(this.dbManager.getSessionStore().db, 3);
+    const { totalPending, totalProcessing, totalFailed } = pendingStore.getQueueStatusCounts();
     this.sseBroadcaster.broadcast({
       type: 'processing_status',
       isProcessing,
-      queueDepth
+      queueDepth,
+      totalPending,
+      totalProcessing,
+      totalFailed
     });
   });
 }

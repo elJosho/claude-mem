@@ -543,7 +543,7 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
           }
 
           const text = await workerGetText(
-            `/api/search/observations?query=${encodeURIComponent(query)}&limit=10`,
+            `/api/search?query=${encodeURIComponent(query)}&limit=10&format=json`,
           );
 
           if (!text) {
@@ -552,7 +552,7 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
 
           try {
             const data = JSON.parse(text);
-            const items = Array.isArray(data.items) ? data.items : [];
+            const items = Array.isArray(data.observations) ? data.observations : [];
             if (items.length === 0) {
               return `No results found for "${query}".`;
             }
@@ -562,7 +562,8 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
               .map((item: Record<string, unknown>, index: number) => {
                 const title = String(item.title || item.subtitle || "Untitled");
                 const project = item.project ? ` [${String(item.project)}]` : "";
-                return `${index + 1}. ${title}${project}`;
+                const subtitle = item.subtitle ? `\n   ${String(item.subtitle)}` : "";
+                return `${index + 1}. [#${item.id}] ${title}${project}${subtitle}`;
               })
               .join("\n");
           } catch {

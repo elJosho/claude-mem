@@ -17,6 +17,7 @@ export function useSSE() {
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [queueDepth, setQueueDepth] = useState(0);
+  const [queueCounts, setQueueCounts] = useState({ totalPending: 0, totalProcessing: 0, totalFailed: 0 });
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
 
@@ -118,6 +119,11 @@ export function useSSE() {
               console.log('[SSE] Processing status:', data.isProcessing, 'Queue depth:', data.queueDepth);
               setIsProcessing(data.isProcessing);
               setQueueDepth(data.queueDepth || 0);
+              setQueueCounts({
+                totalPending: data.totalPending ?? 0,
+                totalProcessing: data.totalProcessing ?? 0,
+                totalFailed: data.totalFailed ?? 0
+              });
             }
             break;
         }
@@ -145,6 +151,7 @@ export function useSSE() {
     projectsBySource: catalog.projectsBySource,
     isProcessing,
     queueDepth,
+    queueCounts,
     isConnected
   };
 }

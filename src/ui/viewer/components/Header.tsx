@@ -14,6 +14,7 @@ interface HeaderProps {
   onSourceChange: (source: string) => void;
   isProcessing: boolean;
   queueDepth: number;
+  queueCounts: { totalPending: number; totalProcessing: number; totalFailed: number };
   themePreference: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   onContextPreviewToggle: () => void;
@@ -41,6 +42,7 @@ export function Header({
   onSourceChange,
   isProcessing,
   queueDepth,
+  queueCounts,
   themePreference,
   onThemeChange,
   onContextPreviewToggle
@@ -112,6 +114,27 @@ export function Header({
           </svg>
         </a>
         <GitHubStarsButton username="thedotmack" repo="claude-mem" />
+        <span
+          className={`queue-stats${queueCounts.totalFailed > 0 ? ' queue-stats--has-failed' : ''}`}
+          title="SQLite pending_messages: jobs waiting for the memory agent (Pending), in flight (Processing), or exhausted retries (Failed)."
+          aria-label={`Worker queue: ${queueCounts.totalPending} pending, ${queueCounts.totalProcessing} processing, ${queueCounts.totalFailed} failed`}
+        >
+          <span className="queue-stats-heading">Queue</span>
+          <span className="queue-stats-pair">
+            <span className="queue-stats-k">Pending</span>
+            <span className="queue-stats-v">{queueCounts.totalPending}</span>
+          </span>
+          <span className="queue-stats-dot" aria-hidden>·</span>
+          <span className="queue-stats-pair">
+            <span className="queue-stats-k">Processing</span>
+            <span className="queue-stats-v">{queueCounts.totalProcessing}</span>
+          </span>
+          <span className="queue-stats-dot" aria-hidden>·</span>
+          <span className="queue-stats-pair queue-stats-pair--failed">
+            <span className="queue-stats-k">Failed</span>
+            <span className={`queue-stats-v${queueCounts.totalFailed > 0 ? ' queue-stats-v--failed' : ''}`}>{queueCounts.totalFailed}</span>
+          </span>
+        </span>
         <select
           value={currentFilter}
           onChange={e => onFilterChange(e.target.value)}

@@ -540,6 +540,74 @@
       }
     }
 
+    .queue-stats {
+      display: inline-flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px 6px;
+      row-gap: 2px;
+      font-family: 'Monaspace Radon', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--color-border-primary);
+      background: var(--color-bg-card);
+      flex-shrink: 1;
+      min-width: 0;
+      max-width: min(100%, 420px);
+    }
+
+    .queue-stats-heading {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      opacity: 0.75;
+      margin-right: 2px;
+    }
+
+    .queue-stats-pair {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .queue-stats-k {
+      font-size: 10px;
+      font-weight: 500;
+      opacity: 0.82;
+    }
+
+    .queue-stats-v {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      min-width: 1.25ch;
+      text-align: right;
+    }
+
+    .queue-stats-dot {
+      opacity: 0.35;
+      user-select: none;
+    }
+
+    .queue-stats-v--failed {
+      color: var(--color-text-secondary);
+    }
+
+    .queue-stats--has-failed {
+      border-color: rgba(218, 54, 51, 0.45);
+    }
+
+    .queue-stats--has-failed .queue-stats-pair--failed .queue-stats-k {
+      opacity: 0.95;
+    }
+
+    .queue-stats--has-failed .queue-stats-v--failed {
+      color: #da3633;
+    }
+
     .logo-text {
       font-family: 'Monaspace Radon', monospace;
       font-weight: 100;

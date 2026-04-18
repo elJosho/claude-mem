@@ -72,6 +72,7 @@ import {
 } from './integrations/GeminiCliHooksInstaller.js';
 
 // Service layer imports
+import { PendingMessageStore } from './sqlite/PendingMessageStore.js';
 import { DatabaseManager } from './worker/DatabaseManager.js';
 import { SessionManager } from './worker/SessionManager.js';
 import { SSEBroadcaster } from './worker/SSEBroadcaster.js';
@@ -1013,16 +1014,25 @@ export class WorkerService {
     const isProcessing = queueDepth > 0;
     const activeSessions = this.sessionManager.getActiveSessionCount();
 
+    const pendingStore = new PendingMessageStore(this.dbManager.getSessionStore().db, 3);
+    const { totalPending, totalProcessing, totalFailed } = pendingStore.getQueueStatusCounts();
+
     logger.info('WORKER', 'Broadcasting processing status', {
       isProcessing,
       queueDepth,
-      activeSessions
+      activeSessions,
+      totalPending,
+      totalProcessing,
+      totalFailed
     });
 
     this.sseBroadcaster.broadcast({
       type: 'processing_status',
       isProcessing,
-      queueDepth
+      queueDepth,
+      totalPending,
+      totalProcessing,
+      totalFailed
     });
   }
 }

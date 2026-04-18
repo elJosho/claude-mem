@@ -20,7 +20,7 @@ export function App() {
   const [paginatedSummaries, setPaginatedSummaries] = useState<Summary[]>([]);
   const [paginatedPrompts, setPaginatedPrompts] = useState<UserPrompt[]>([]);
 
-  const { observations, summaries, prompts, projects, sources, projectsBySource, isProcessing, queueDepth, isConnected } = useSSE();
+  const { observations, summaries, prompts, projects, sources, projectsBySource, isProcessing, queueDepth, queueCounts, isConnected } = useSSE();
   const { settings, saveSettings, isSaving, saveStatus } = useSettings();
   const { stats, refreshStats } = useStats();
   const { preference, resolvedTheme, setThemePreference } = useTheme();
@@ -119,6 +119,7 @@ export function App() {
         onSourceChange={setCurrentSource}
         isProcessing={isProcessing}
         queueDepth={queueDepth}
+        queueCounts={queueCounts}
         themePreference={preference}
         onThemeChange={setThemePreference}
         onContextPreviewToggle={toggleContextPreview}

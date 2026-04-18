@@ -217,6 +217,25 @@ export class PendingMessageStore {
   }
 
   /**
+   * Count pending_messages rows by status (single query; matches GET /api/pending-queue totals).
+   */
+  getQueueStatusCounts(): { totalPending: number; totalProcessing: number; totalFailed: number } {
+    const stmt = this.db.prepare(`
+      SELECT status, COUNT(*) AS cnt FROM pending_messages
+      WHERE status IN ('pending', 'processing', 'failed')
+      GROUP BY status
+    `);
+    const rows = stmt.all() as { status: string; cnt: number }[];
+    const out = { totalPending: 0, totalProcessing: 0, totalFailed: 0 };
+    for (const r of rows) {
+      if (r.status === 'pending') out.totalPending = r.cnt;
+      else if (r.status === 'processing') out.totalProcessing = r.cnt;
+      else if (r.status === 'failed') out.totalFailed = r.cnt;
+    }
+    return out;
+  }
+
+  /**
    * Get count of stuck messages (processing longer than threshold)
    */
   getStuckCount(thresholdMs: number): number {
