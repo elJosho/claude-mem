@@ -354,7 +354,7 @@ export class TranscriptEventProcessor {
 
     try {
       const response = await workerHttpRequest(
-        `/api/context/inject?projects=${encodeURIComponent(projectsParam)}&platformSource=${encodeURIComponent(session.platformSource)}`
+        `/api/context/inject?projects=${encodeURIComponent(projectsParam)}`
       );
       if (!response.ok) return;
 

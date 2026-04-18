@@ -55,6 +55,7 @@ interface OCEvent {
 
 const WORKER_BASE_URL = "http://127.0.0.1:37777";
 const MAX_TOOL_RESPONSE_LENGTH = 1000;
+const MAX_USER_PROMPT_LENGTH = 2000;
 
 /**
  * Minimum character length for a message to be considered a potential skill prompt.
@@ -240,7 +241,7 @@ function writeContextToAgentsMd(contextContent: string): void {
 async function refreshAgentsMdContext(projectName: string): Promise<void> {
   try {
     const contextText = await workerGetText(
-      `/api/context/inject?projects=${encodeURIComponent(projectName)}&platformSource=opencode`,
+      `/api/context/inject?projects=${encodeURIComponent(projectName)}`,
     );
     if (contextText && contextText.trim()) {
       writeContextToAgentsMd(contextText);
@@ -361,10 +362,16 @@ export const ClaudeMemPlugin = async (ctx: OpenCodePluginContext) => {
         return;
       }
 
+      // Truncate excessively long prompts (e.g. pasted log dumps, table output)
+      // to prevent storing megabytes of non-semantic data as user prompts.
+      const cappedPrompt = cleanedPrompt.length > MAX_USER_PROMPT_LENGTH
+        ? cleanedPrompt.slice(0, MAX_USER_PROMPT_LENGTH) + "..."
+        : cleanedPrompt;
+
       await workerPost("/api/sessions/init", {
         contentSessionId,
         project: _projectName,
-        prompt: cleanedPrompt,
+        prompt: cappedPrompt,
         platformSource: "opencode",
       });
       return;
