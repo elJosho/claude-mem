@@ -1,6 +1,6 @@
 <h1 align="center">
   <br>
-  <a href="https://github.com/thedotmack/claude-mem">
+  <a href="https://github.com/elJosho/claude-mem">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/thedotmack/claude-mem/main/docs/public/claude-mem-logo-for-dark-mode.webp">
       <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/thedotmack/claude-mem/main/docs/public/claude-mem-logo-for-light-mode.webp">
@@ -9,6 +9,40 @@
   </a>
   <br>
 </h1>
+
+> **Fork: [elJosho/claude-mem](https://github.com/elJosho/claude-mem)** -- Based on [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) with the additions below.
+
+## Fork-Specific Changes
+
+### AWS Bedrock Provider
+Full AWS Bedrock integration as an AI provider for observation extraction. Uses SigV4 signing with credentials from environment variables -- no AWS SDK dependency. Supports tier aliases (`haiku`, `sonnet`, `opus`) that map to Bedrock model IDs.
+
+### Complete Settings UI
+Replaced the single "Advanced" section with dedicated settings panels:
+- **AI Provider** -- Bedrock (region + model), Claude (auth method: CLI vs API key), Gemini, OpenRouter
+- **Tier Routing** -- enable/disable, simple model and summary model selection
+- **Features** -- context injection toggles, semantic search injection, CLAUDE.md generation, transcript ingestion, project exclusions
+- **Vector Search** -- Chroma enable/disable, local vs remote mode, host/port
+- **System** -- log level, worker port, max concurrent agents
+
+### Cross-Session Echo Deduplication
+Prevents the "echo amplification" bug where AI-generated observations restate content from injected context, creating duplicates across sessions. Uses hash-based detection with fuzzy title matching (overlap ratio) over a 7-day, project-scoped window.
+
+### OpenCode Integration
+- Platform source detection and styling in the viewer UI
+- AGENTS.md context injection for OpenCode sessions
+- OAuth token forwarding in session-init
+- Prompt extraction from `message.part.updated` events
+- Skill preamble stripping from user messages
+
+### Security & Stability
+- Block non-localhost binding to prevent unauthenticated API exposure
+- Observer-session content guards and prompt length caps
+- Tag sanitization, observer project coercion, and prompt dedup
+- Shared observations across all agents for the same project
+- Pending queue status metrics in viewer UI and SSE stream
+
+---
 
 <p align="center">
   <a href="docs/i18n/README.zh.md">🇨🇳 中文</a> •
