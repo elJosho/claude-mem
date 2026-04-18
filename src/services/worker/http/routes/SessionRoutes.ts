@@ -781,9 +781,29 @@ export class SessionRoutes extends BaseRouteHandler {
     // Only contentSessionId is truly required — Cursor and other platforms
     // may omit prompt/project in their payload (#838, #1049)
     const project = req.body.project || 'unknown';
-    const prompt = req.body.prompt || '[media prompt]';
+    const rawPrompt = req.body.prompt || '[media prompt]';
+    // Cap excessively long prompts (e.g. pasted log dumps) at the API boundary
+    const MAX_STORED_PROMPT_LENGTH = 2000;
+    const prompt = rawPrompt.length > MAX_STORED_PROMPT_LENGTH
+      ? rawPrompt.substring(0, MAX_STORED_PROMPT_LENGTH) + '...'
+      : rawPrompt;
     const platformSource = normalizePlatformSource(req.body.platformSource);
     const customTitle = req.body.customTitle || undefined;
+
+    // Guard: reject observer-session subprocess prompts.
+    // When the SDK agent spawns a Claude CLI subprocess (cwd: OBSERVER_SESSIONS_DIR),
+    // that subprocess fires hooks which reach this endpoint. The CWD guard in
+    // hook-command.ts should block them, but as a belt-and-suspenders defense
+    // we also detect observer prompts by content fingerprint.
+    if (SessionRoutes.isObserverSessionContent(prompt)) {
+      logger.debug('SESSION', 'Rejected observer-session init by content fingerprint', {
+        contentSessionId,
+        prompt_preview: prompt.substring(0, 60)
+      });
+      // Return a synthetic response so the hook doesn't error out
+      res.json({ sessionDbId: -1, promptNumber: 0, skipped: true, reason: 'observer_session' });
+      return;
+    }
 
     // Accept OAuth token forwarded from the hook process.
     // The hook runs inside Claude Code which has the current auth token,
@@ -914,6 +934,25 @@ export class SessionRoutes extends BaseRouteHandler {
       contextInjected
     });
   });
+
+  /**
+   * Detect observer-session content by fingerprinting known patterns.
+   * These are prompts from the SDK agent's Claude subprocess that should
+   * never be stored as user data:
+   * 1. Observer system prompt: "You are a Claude-Mem, a specialized observer tool..."
+   * 2. Continuation prompt: "Hello memory agent, you are continuing to observe..."
+   * 3. Raw observation XML: "<observed_from_primary_session>"
+   */
+  private static isObserverSessionContent(prompt: string): boolean {
+    if (!prompt) return false;
+    const trimmed = prompt.trimStart();
+    return (
+      trimmed.startsWith('You are a Claude-Mem') ||
+      trimmed.startsWith('Hello memory agent') ||
+      trimmed.startsWith('<observed_from_primary_session>') ||
+      trimmed.includes('specialized observer tool for creating searchable memory')
+    );
+  }
 
   // Simple tool names that produce low-complexity observations
   private static readonly SIMPLE_TOOLS = new Set([

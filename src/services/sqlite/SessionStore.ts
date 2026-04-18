@@ -1768,6 +1768,22 @@ export class SessionStore {
     const DUPLICATE_PROMPT_WINDOW_MS = 8000;
     const normalizedIncoming = normalizeUserPromptTextForDedup(promptText);
 
+    // Guard: reject observer-session content that leaked past the hook/endpoint guards.
+    // These are internal SDK agent prompts/continuations that should never be stored as user data.
+    const trimmed = normalizedIncoming.trimStart();
+    if (
+      trimmed.startsWith('You are a Claude-Mem') ||
+      trimmed.startsWith('Hello memory agent') ||
+      trimmed.startsWith('<observed_from_primary_session>') ||
+      trimmed.includes('specialized observer tool for creating searchable memory')
+    ) {
+      logger.debug('DEDUP', 'Rejected observer-session content in saveNextUserPromptAtomic', {
+        contentSessionId,
+        preview: trimmed.substring(0, 60)
+      });
+      return { id: -1, promptNumber: 0, created_at_epoch: Date.now(), duplicateSkipped: true };
+    }
+
     const tx = this.db.transaction(() => {
       const latest = this.getLatestUserPrompt(contentSessionId);
       if (

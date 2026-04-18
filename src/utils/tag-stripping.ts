@@ -12,6 +12,8 @@
  *    (CLAUDE.md contents, deferred tool lists, etc. — should not be persisted)
  * 5. <skill_content> - OpenCode skill instructions injected into prompts
  *    (should not be persisted to memory)
+ * 6. <observed_from_primary_session> - Raw SDK agent observation XML
+ *    (internal observer data that should never be stored as user content)
  *
  * EDGE PROCESSING PATTERN: Filter at hook layer before sending to worker/storage.
  * This keeps the worker service simple and follows one-way data stream.
@@ -44,7 +46,8 @@ function countTags(content: string): number {
 const persistedOutputCount = (content.match(/<persisted-output>/g) || []).length;
   const systemReminderCount = (content.match(/<system-reminder>/g) || []).length;
   const skillContentCount = (content.match(/<skill_content[\s>]/g) || []).length;
-  return privateCount + contextCount + systemInstructionCount + systemInstructionHyphenCount + persistedOutputCount + systemReminderCount + skillContentCount;
+  const observedCount = (content.match(/<observed_from_primary_session>/g) || []).length;
+  return privateCount + contextCount + systemInstructionCount + systemInstructionHyphenCount + persistedOutputCount + systemReminderCount + skillContentCount + observedCount;
 }
 
 /**
@@ -71,6 +74,7 @@ function stripTagsInternal(content: string): string {
 .replace(/<persisted-output>[\s\S]*?<\/persisted-output>/g, '')
     .replace(SYSTEM_REMINDER_REGEX, '')
     .replace(/<skill_content[\s\S]*?<\/skill_content>/g, '')
+    .replace(/<observed_from_primary_session>[\s\S]*?<\/observed_from_primary_session>/g, '')
     .trim();
 }
 
