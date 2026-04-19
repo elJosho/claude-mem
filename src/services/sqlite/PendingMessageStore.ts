@@ -477,6 +477,16 @@ export class PendingMessageStore {
     return result ? { sessionDbId: result.session_db_id, contentSessionId: result.content_session_id } : null;
   }
 
+  pruneExpiredFailed(maxAgeMs: number = 10 * 60 * 1000): number {
+    const cutoff = Date.now() - maxAgeMs;
+    const stmt = this.db.prepare(`
+      DELETE FROM pending_messages
+      WHERE status = 'failed' AND failed_at_epoch < ?
+    `);
+    const result = stmt.run(cutoff);
+    return result.changes;
+  }
+
   /**
    * Clear all failed messages from the queue
    * @returns Number of messages deleted

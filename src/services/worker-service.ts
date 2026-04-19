@@ -962,6 +962,11 @@ export class WorkerService {
       logger.error('SYSTEM', 'Failed to clean up stale sessions', {}, error as Error);
     }
 
+    const pruned = pendingStore.pruneExpiredFailed();
+    if (pruned > 0) {
+      logger.info('SYSTEM', `Pruned ${pruned} failed messages older than 10 minutes`);
+    }
+
     const orphanedSessionIds = pendingStore.getSessionsWithPendingMessages();
 
     const result = {

@@ -1623,6 +1623,22 @@ export class SessionStore {
     customTitle?: string,
     platformSource?: string
   ): number {
+    // Guard: reject observer-session content at the DB layer.
+    // This is a last-resort defense — the endpoint should already block these.
+    const trimmedPrompt = (userPrompt || '').trimStart();
+    if (
+      trimmedPrompt.startsWith('You are a Claude-Mem') ||
+      trimmedPrompt.startsWith('Hello memory agent') ||
+      trimmedPrompt.startsWith('<observed_from_primary_session>') ||
+      trimmedPrompt.includes('specialized observer tool for creating searchable memory')
+    ) {
+      logger.debug('SESSION', 'Rejected observer-session content in SessionStore.createSDKSession', {
+        contentSessionId,
+        preview: trimmedPrompt.substring(0, 60)
+      });
+      return -1;
+    }
+
     const now = new Date();
     const nowEpoch = now.getTime();
     const resolved = resolveCreateSessionArgs(customTitle, platformSource);
