@@ -22,14 +22,33 @@ interface HeaderProps {
 
 function formatSourceLabel(source: string): string {
   if (source === 'all') return 'All';
-  if (source === 'claude') return 'Claude';
+  // "claude" = Claude Code CLI sessions only — not Cursor / other IDEs
+  if (source === 'claude') return 'Claude Code';
   if (source === 'codex') return 'Codex';
   return source.charAt(0).toUpperCase() + source.slice(1);
 }
 
+/** Puts Cursor (and common IDEs) before "Claude Code" so users don't pick the wrong tab. */
 function buildSourceTabs(sources: string[]): string[] {
-  const merged = ['all', 'claude', 'codex', ...sources];
+  const merged = ['all', 'cursor', 'claude', 'codex', ...sources];
   return Array.from(new Set(merged.filter(Boolean)));
+}
+
+function sourceTabTitle(source: string): string {
+  switch (source) {
+    case 'all':
+      return 'Show memory from every IDE and CLI';
+    case 'claude':
+      return 'Claude Code sessions only (excludes Cursor, OpenCode, etc.)';
+    case 'cursor':
+      return 'Cursor IDE sessions only';
+    case 'codex':
+      return 'Codex CLI sessions only';
+    case 'opencode':
+      return 'OpenCode sessions only';
+    default:
+      return `Sessions from source: ${source}`;
+  }
 }
 
 export function Header({
@@ -64,7 +83,7 @@ export function Header({
           </div>
           <span className="logo-text">claude-mem</span>
         </h1>
-        <div className="source-tabs" role="tablist" aria-label="Context source tabs">
+        <div className="source-tabs" role="tablist" aria-label="Filter by IDE or CLI (e.g. Cursor vs Claude Code)">
           {availableSources.map(source => (
             <button
               key={source}
@@ -72,6 +91,7 @@ export function Header({
               className={`source-tab ${currentSource === source ? 'active' : ''}`}
               onClick={() => onSourceChange(source)}
               aria-pressed={currentSource === source}
+              title={sourceTabTitle(source)}
             >
               {formatSourceLabel(source)}
             </button>
