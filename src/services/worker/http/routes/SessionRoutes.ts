@@ -21,7 +21,7 @@ import { SessionEventBroadcaster } from '../../events/SessionEventBroadcaster.js
 import { SessionCompletionHandler } from '../../session/SessionCompletionHandler.js';
 import { PrivacyCheckValidator } from '../../validation/PrivacyCheckValidator.js';
 import { SettingsDefaultsManager } from '../../../../shared/SettingsDefaultsManager.js';
-import { USER_SETTINGS_PATH } from '../../../../shared/paths.js';
+import { USER_SETTINGS_PATH, OBSERVER_SESSIONS_PROJECT } from '../../../../shared/paths.js';
 import { getProcessBySession, ensureProcessExit } from '../../ProcessRegistry.js';
 import { getProjectContext } from '../../../../utils/project-name.js';
 import { normalizePlatformSource } from '../../../../shared/platform-source.js';
@@ -845,13 +845,14 @@ export class SessionRoutes extends BaseRouteHandler {
     // When the SDK agent spawns a Claude CLI subprocess (cwd: OBSERVER_SESSIONS_DIR),
     // that subprocess fires hooks which reach this endpoint. The CWD guard in
     // hook-command.ts should block them, but as a belt-and-suspenders defense
-    // we also detect observer prompts by content fingerprint.
-    if (SessionRoutes.isObserverSessionContent(prompt)) {
-      logger.debug('SESSION', 'Rejected observer-session init by content fingerprint', {
+    // we also check project name and content fingerprint.
+    if (project === OBSERVER_SESSIONS_PROJECT || SessionRoutes.isObserverSessionContent(prompt)) {
+      logger.info('SESSION', 'Rejected observer-session init', {
         contentSessionId,
+        project,
+        matchedBy: project === OBSERVER_SESSIONS_PROJECT ? 'project_name' : 'content_fingerprint',
         prompt_preview: prompt.substring(0, 60)
       });
-      // Return a synthetic response so the hook doesn't error out
       res.json({ sessionDbId: -1, promptNumber: 0, skipped: true, reason: 'observer_session' });
       return;
     }

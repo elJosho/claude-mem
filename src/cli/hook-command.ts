@@ -84,6 +84,7 @@ export async function hookCommand(platform: string, event: string, options: Hook
     // Guard: never process hooks fired from observer-session subprocesses.
     // The SDKAgent spawns Claude CLI in OBSERVER_SESSIONS_DIR, which triggers
     // global hooks — storing its system prompts and tool calls as user data.
+    logger.debug('HOOK', `CWD guard check: event=${event} input.cwd=${input.cwd} OBSERVER_DIR=${OBSERVER_SESSIONS_DIR} match=${input.cwd?.startsWith(OBSERVER_SESSIONS_DIR)}`);
     if (input.cwd && input.cwd.startsWith(OBSERVER_SESSIONS_DIR)) {
       logger.debug('HOOK', `Skipping hook for observer-session subprocess: ${event}`, { cwd: input.cwd });
       console.log(JSON.stringify(adapter.formatOutput({ continue: true, suppressOutput: true })));
