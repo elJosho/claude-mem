@@ -1,6 +1,6 @@
 {
   "name": "claude-mem",
-  "version": "12.2.0-elJosho-4",
+  "version": "12.2.0-elJosho-5",
   "description": "Memory compression system for Claude Code - persist context across sessions",
   "keywords": [
     "claude",
@@ -65,6 +65,8 @@
     "build-and-sync": "npm run build && npm run sync-marketplace && sleep 1 && cd ~/.claude/plugins/marketplaces/thedotmack && npm run worker:restart",
     "sync-marketplace": "node scripts/sync-marketplace.cjs",
     "sync-marketplace:force": "node scripts/sync-marketplace.cjs --force",
+    "sync-opencode": "node scripts/sync-opencode-plugin.cjs",
+    "sync-built-plugin": "node scripts/sync-built-plugin.cjs",
     "build:binaries": "node scripts/build-worker-binary.js",
     "worker:logs": "tail -n 50 ~/.claude-mem/logs/worker-$(date +%Y-%m-%d).log",
     "worker:tail": "tail -f 50 ~/.claude-mem/logs/worker-$(date +%Y-%m-%d).log",

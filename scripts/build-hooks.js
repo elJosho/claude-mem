@@ -9,8 +9,12 @@ import { build } from 'esbuild';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { syncOpenCodePlugin } = require('./sync-opencode-plugin.cjs');
+const { syncBuiltPlugin } = require('./sync-built-plugin.cjs');
 
 const WORKER_SERVICE = {
   name: 'worker-service',
@@ -386,7 +390,10 @@ async function buildHooks() {
 
       const opencodeStats = fs.statSync(`${opencodeOutDir}/index.js`);
       console.log(`✓ opencode plugin built (${(opencodeStats.size / 1024).toFixed(2)} KB)`);
+      syncOpenCodePlugin(path.join(__dirname, '..'));
     }
+
+    syncBuiltPlugin(path.join(__dirname, '..'));
 
     // Verify critical distribution files exist (skills are source files, not build outputs)
     console.log('\n📋 Verifying distribution files...');
