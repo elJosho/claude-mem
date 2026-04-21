@@ -8,6 +8,7 @@ import { useSettings } from './hooks/useSettings';
 import { useStats } from './hooks/useStats';
 import { usePagination } from './hooks/usePagination';
 import { useTheme } from './hooks/useTheme';
+import { useWorkerVersion } from './hooks/useWorkerVersion';
 import { Observation, Summary, UserPrompt } from './types';
 import { mergeAndDeduplicateByProject } from './utils/data';
 
@@ -24,6 +25,7 @@ export function App() {
   const { settings, saveSettings, isSaving, saveStatus } = useSettings();
   const { stats, refreshStats } = useStats();
   const { preference, resolvedTheme, setThemePreference } = useTheme();
+  const workerVersion = useWorkerVersion();
   const pagination = usePagination(currentFilter, currentSource);
 
   const availableProjects = useMemo(() => {
@@ -123,6 +125,7 @@ export function App() {
         themePreference={preference}
         onThemeChange={setThemePreference}
         onContextPreviewToggle={toggleContextPreview}
+        workerVersion={workerVersion}
       />
 
       <Feed

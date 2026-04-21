@@ -18,6 +18,8 @@ interface HeaderProps {
   themePreference: ThemePreference;
   onThemeChange: (theme: ThemePreference) => void;
   onContextPreviewToggle: () => void;
+  /** Worker build version from GET /api/version */
+  workerVersion: string | null;
 }
 
 function formatSourceLabel(source: string): string {
@@ -64,7 +66,8 @@ export function Header({
   queueCounts,
   themePreference,
   onThemeChange,
-  onContextPreviewToggle
+  onContextPreviewToggle,
+  workerVersion
 }: HeaderProps) {
   useSpinningFavicon(isProcessing);
   const availableSources = buildSourceTabs(sources);
@@ -99,6 +102,11 @@ export function Header({
         </div>
       </div>
       <div className="status">
+        {workerVersion ? (
+          <span className="worker-version" title="Running worker version">
+            {workerVersion}
+          </span>
+        ) : null}
         <a
           href="https://docs.claude-mem.ai"
           target="_blank"
