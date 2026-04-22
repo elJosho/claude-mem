@@ -538,6 +538,12 @@ export class WorkerService {
           if (reaped > 0) {
             logger.info('SYSTEM', `Reaped ${reaped} stale sessions`);
           }
+
+          const prunedFailed = this.sessionManager.getPendingMessageStore().pruneExpiredFailed();
+          if (prunedFailed > 0) {
+            logger.info('SYSTEM', `Pruned ${prunedFailed} failed messages older than 10 minutes`);
+            this.broadcastProcessingStatus();
+          }
         } catch (e) {
           logger.error('SYSTEM', 'Stale session reaper error', { error: e instanceof Error ? e.message : String(e) });
         }

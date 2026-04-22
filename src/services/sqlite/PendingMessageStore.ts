@@ -379,10 +379,10 @@ export class PendingMessageStore {
       // Max retries exceeded, mark as permanently failed
       const stmt = this.db.prepare(`
         UPDATE pending_messages
-        SET status = 'failed', completed_at_epoch = ?
+        SET status = 'failed', completed_at_epoch = ?, failed_at_epoch = ?
         WHERE id = ?
       `);
-      stmt.run(now, messageId);
+      stmt.run(now, now, messageId);
     }
   }
 
@@ -479,9 +479,11 @@ export class PendingMessageStore {
 
   pruneExpiredFailed(maxAgeMs: number = 10 * 60 * 1000): number {
     const cutoff = Date.now() - maxAgeMs;
+    // Prefer failed_at_epoch; fall back for legacy rows where markFailed() omitted it
     const stmt = this.db.prepare(`
       DELETE FROM pending_messages
-      WHERE status = 'failed' AND failed_at_epoch < ?
+      WHERE status = 'failed'
+        AND COALESCE(failed_at_epoch, completed_at_epoch, created_at_epoch) < ?
     `);
     const result = stmt.run(cutoff);
     return result.changes;

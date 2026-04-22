@@ -144,3 +144,64 @@ describe('PendingMessageStore - Self-Healing claimNextMessage', () => {
     expect(session1Msg.status).toBe('processing');
   });
 });
+
+describe('PendingMessageStore - pruneExpiredFailed', () => {
+  let db: Database;
+  let store: PendingMessageStore;
+  let sessionDbId: number;
+  const CONTENT_SESSION_ID = 'test-prune-failed';
+
+  beforeEach(() => {
+    db = new ClaudeMemDatabase(':memory:').db;
+    store = new PendingMessageStore(db, 3);
+    sessionDbId = createSDKSession(db, CONTENT_SESSION_ID, 'test-project', 'Test prompt');
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  test('markFailed sets failed_at_epoch when retries are exhausted', () => {
+    const message: PendingMessage = {
+      type: 'observation',
+      tool_name: 'T',
+      tool_input: {},
+      tool_response: {},
+      prompt_number: 1,
+    };
+    const id = store.enqueue(sessionDbId, CONTENT_SESSION_ID, message);
+    store.markFailed(id);
+    store.markFailed(id);
+    store.markFailed(id);
+    store.markFailed(id);
+
+    const row = db.query(
+      'SELECT status, failed_at_epoch, completed_at_epoch FROM pending_messages WHERE id = ?'
+    ).get(id) as { status: string; failed_at_epoch: number | null; completed_at_epoch: number | null };
+
+    expect(row.status).toBe('failed');
+    expect(row.failed_at_epoch).not.toBeNull();
+    expect(row.completed_at_epoch).toBe(row.failed_at_epoch);
+  });
+
+  test('pruneExpiredFailed removes legacy failed rows with NULL failed_at_epoch', () => {
+    const message: PendingMessage = {
+      type: 'observation',
+      tool_name: 'T',
+      tool_input: {},
+      tool_response: {},
+      prompt_number: 1,
+    };
+    const id = store.enqueue(sessionDbId, CONTENT_SESSION_ID, message);
+    const oldCompleted = Date.now() - 11 * 60 * 1000;
+    db.run(
+      `UPDATE pending_messages SET status = 'failed', completed_at_epoch = ?, failed_at_epoch = NULL WHERE id = ?`,
+      [oldCompleted, id]
+    );
+
+    const pruned = store.pruneExpiredFailed();
+    expect(pruned).toBe(1);
+    const row = db.query('SELECT id FROM pending_messages WHERE id = ?').get(id);
+    expect(row).toBeNull();
+  });
+});
