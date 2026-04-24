@@ -39,3 +39,6 @@ src/ui/viewer.html
 
 # Local contribution analysis (not part of upstream)
 CONTRIB_NOTES.md
+
+# Injected claude-mem viewer context (per-machine)
+**/CLAUDE.local.md

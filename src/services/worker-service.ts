@@ -16,7 +16,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { getWorkerPort, getWorkerHost } from '../shared/worker-utils.js';
 import { HOOK_TIMEOUTS } from '../shared/hook-constants.js';
 import { SettingsDefaultsManager } from '../shared/SettingsDefaultsManager.js';
-import { getAuthMethodDescription } from '../shared/EnvManager.js';
+import { applyAwsCredentialsFromClaudeMemEnvFile, getAuthMethodDescription } from '../shared/EnvManager.js';
 import { logger } from '../utils/logger.js';
 import { ChromaMcpManager } from './sync/ChromaMcpManager.js';
 import { ChromaSync } from './sync/ChromaSync.js';
@@ -1107,6 +1107,8 @@ export async function ensureWorkerStarted(port: number): Promise<boolean> {
 // ============================================================================
 
 async function main() {
+  applyAwsCredentialsFromClaudeMemEnvFile();
+
   const command = process.argv[2];
 
   // Early exit if plugin is disabled in Claude Code settings (#781).

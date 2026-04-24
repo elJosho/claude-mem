@@ -104,6 +104,36 @@ function serializeEnvFile(env: Record<string, string>): string {
  * Load credentials from ~/.claude-mem/.env
  * Returns empty object if file doesn't exist (means use CLI billing)
  */
+/**
+ * Merge AWS_* variables from ~/.claude-mem/.env into process.env.
+ * BedrockAgent reads credentials from process.env; without this, a .env file
+ * that only contains AWS keys would never be seen by the worker daemon.
+ */
+export function applyAwsCredentialsFromClaudeMemEnvFile(): void {
+  if (!existsSync(ENV_FILE_PATH)) {
+    return;
+  }
+  try {
+    const parsed = parseEnvFile(readFileSync(ENV_FILE_PATH, 'utf-8'));
+    const keys = [
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'AWS_SESSION_TOKEN',
+      'AWS_REGION',
+      'AWS_DEFAULT_REGION',
+      'AWS_PROFILE'
+    ] as const;
+    for (const key of keys) {
+      const value = parsed[key];
+      if (value) {
+        process.env[key] = value;
+      }
+    }
+  } catch (error) {
+    logger.warn('ENV', 'Failed to apply AWS_* from .env file', { path: ENV_FILE_PATH }, error as Error);
+  }
+}
+
 export function loadClaudeMemEnv(): ClaudeMemEnv {
   if (!existsSync(ENV_FILE_PATH)) {
     return {};

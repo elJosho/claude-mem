@@ -494,11 +494,37 @@ export class SDKAgent {
   }
 
   /**
+   * Bedrock cross-region inference IDs (us.anthropic.*, etc.) are invalid for the
+   * Claude Agent SDK / Anthropic Messages API. When CLAUDE_MEM_PROVIDER=bedrock
+   * but AWS is not configured, SessionRoutes falls back to this agent — if the
+   * user put a Bedrock ID in CLAUDE_MEM_MODEL, every observation would be discarded
+   * with "invalid model identifier" (#1633-style failures).
+   */
+  private isBedrockStyleAnthropicModelId(model: string): boolean {
+    const m = model.trim().toLowerCase();
+    return (
+      m.startsWith('us.anthropic.')
+      || m.startsWith('eu.anthropic.')
+      || m.startsWith('apac.anthropic.')
+      || m.startsWith('arn:aws:bedrock:')
+    );
+  }
+
+  /**
    * Get model ID from settings or environment
    */
   private getModelId(): string {
     const settingsPath = path.join(homedir(), '.claude-mem', 'settings.json');
     const settings = SettingsDefaultsManager.loadFromFile(settingsPath);
-    return settings.CLAUDE_MEM_MODEL;
+    const model = settings.CLAUDE_MEM_MODEL;
+    if (this.isBedrockStyleAnthropicModelId(model)) {
+      const fallback = SettingsDefaultsManager.getAllDefaults().CLAUDE_MEM_MODEL;
+      logger.warn(
+        'SDK',
+        `CLAUDE_MEM_MODEL is "${model}" (Bedrock inference profile style), which the Claude SDK cannot use. Falling back to "${fallback}". Use CLAUDE_MEM_BEDROCK_MODEL for Bedrock, configure AWS so Bedrock is available, or set CLAUDE_MEM_PROVIDER to claude with a consumer model slug.`
+      );
+      return fallback;
+    }
+    return model;
   }
 }
