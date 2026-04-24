@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [12.2.0-elJosho-7] - 2026-04-24
+
+## Changes
+
+- **Bedrock / AWS:** Worker applies `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION`, and `AWS_PROFILE` from `~/.claude-mem/.env` into `process.env` at startup so Bedrock credentials stored there are picked up by `BedrockAgent`.
+- **SDK model:** If `CLAUDE_MEM_MODEL` is a Bedrock-style inference profile id (e.g. `us.anthropic.*`), the Claude SDK path falls back to the default consumer model instead of discarding every observation with an invalid model error when Bedrock is selected but unavailable.
+
+## Install
+
+Use your usual marketplace or `npm run build` from this tag.
+
 ## [12.2.0] - 2026-04-18
 
 ## Highlights
